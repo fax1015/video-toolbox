@@ -3,7 +3,9 @@ const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 
-const FFMPEG_PATH = path.join(__dirname, 'bin', 'ffmpeg.exe');
+const FFMPEG_PATH = app.isPackaged
+    ? path.join(process.resourcesPath, 'bin', 'ffmpeg.exe')
+    : path.join(__dirname, 'bin', 'ffmpeg.exe');
 let currentFfmpegProcess = null;
 
 function createWindow() {
@@ -16,6 +18,7 @@ function createWindow() {
         minHeight: 700,
         show: false,
         backgroundColor: '#0a0f0e',
+        icon: path.join(__dirname, 'assets', 'icons', 'favicon.ico'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
