@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Toolbox</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="bg-orb orb-1"></div>
+        <div class="bg-orb orb-2"></div>
+        <div class="bg-orb orb-3"></div>
+        <header class="app-header">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                    <path d="M16 7V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2"></path>
+                    <line x1="8" y1="13" x2="16" y2="13"></line>
+                </svg>
+                <span>Video Toolbox</span>
+            </div>
+            <div id="ffmpeg-status" class="status-badge"></div>
+        </header>
+        <div class="content-wrapper">
+            <aside class="app-sidebar">
+                <div class="sidebar-nav">
+                    <button class="nav-item active" id="nav-video" title="Single Video">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                            <line x1="7" y1="2" x2="7" y2="22"></line>
+                            <line x1="17" y1="2" x2="17" y2="22"></line>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <line x1="2" y1="7" x2="7" y2="7"></line>
+                            <line x1="2" y1="17" x2="7" y2="17"></line>
+                            <line x1="17" y1="17" x2="22" y2="17"></line>
+                            <line x1="17" y1="7" x2="22" y2="7"></line>
+                        </svg>
+                    </button>
+                    <button class="nav-item" id="nav-folder" title="Batch Folders">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="sidebar-bottom">
+                    <button class="nav-item" title="Settings">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path
+                                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+            </aside>
+            <main class="main-content">
+                <div id="drop-zone" class="drop-zone">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                <polyline points="17,8 12,3 7,8" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                                <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <h2>Drop your video here</h2>
+                        <p>or click to browse files</p>
+                        <div class="supported-formats">
+                            Supports MP4, MKV, AVI, MOV, WebM, FLV, WMV
+                        </div>
+                    </div>
+                </div>
+                <div id="folder-drop-zone" class="drop-zone hidden">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container" style="background: linear-gradient(135deg, #a78bfa, #8b5cf6);">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+                                </path>
+                            </svg>
+                        </div>
+                        <h2>Drop folders here</h2>
+                        <p>Batch convert entire directories</p>
+                    </div>
+                </div>
+                <div id="file-dashboard" class="dashboard hidden">
+                    <button id="back-btn" class="back-button" title="Go back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <div class="file-card">
+                        <div class="file-icon" id="file-icon">MP4</div>
+                        <div class="file-details">
+                            <h3 id="filename">video.mp4</h3>
+                            <div class="file-meta">
+                                <span id="file-resolution" class="meta-tag">1920×1080</span>
+                                <span id="file-duration" class="meta-tag">00:00:00</span>
+                                <span id="file-bitrate" class="meta-tag">0 kbps</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-panel">
+                        <h4 class="panel-title">Output Settings</h4>
+                        <div class="settings-grid">
+                            <div class="control-group">
+                                <label for="format-select">Container</label>
+                                <select id="format-select">
+                                    <option value="mp4">MP4</option>
+                                    <option value="mkv">MKV</option>
+                                    <option value="webm">WebM</option>
+                                    <option value="mov">MOV</option>
+                                    <option value="avi">AVI</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <label for="codec-select">Video Codec</label>
+                                <select id="codec-select">
+                                    <option value="h264">H.264 (AVC)</option>
+                                    <option value="h265">H.265 (HEVC)</option>
+                                    <option value="vp9">VP9</option>
+                                    <option value="copy">Copy (No Re-encode)</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <label for="preset-select">Speed Preset</label>
+                                <select id="preset-select">
+                                    <option value="ultrafast">Ultra Fast</option>
+                                    <option value="superfast">Super Fast</option>
+                                    <option value="veryfast">Very Fast</option>
+                                    <option value="faster">Faster</option>
+                                    <option value="fast">Fast</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="slow">Slow</option>
+                                    <option value="slower">Slower</option>
+                                    <option value="veryslow">Very Slow</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <label for="audio-select">Audio Codec</label>
+                                <select id="audio-select">
+                                    <option value="aac">AAC</option>
+                                    <option value="opus">Opus</option>
+                                    <option value="copy">Copy (No Re-encode)</option>
+                                    <option value="none">No Audio</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="control-group crf-group">
+                            <label for="crf-slider">Quality (CRF): <span id="crf-value">23</span></label>
+                            <input type="range" id="crf-slider" min="0" max="51" value="23">
+                            <div class="crf-labels">
+                                <span>Lossless</span>
+                                <span>Smaller File</span>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="audio-bitrate">Audio Bitrate</label>
+                            <select id="audio-bitrate">
+                                <option value="128k">128 kbps</option>
+                                <option value="192k" selected>192 kbps</option>
+                                <option value="256k">256 kbps</option>
+                                <option value="320k">320 kbps</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="convert-btn" class="primary-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <polygon points="5,3 19,12 5,21" fill="currentColor" />
+                        </svg>
+                        Start Encoding
+                    </button>
+                </div>
+                <div id="progress-view" class="progress-view hidden">
+                    <div class="progress-header">
+                        <h3>Encoding in Progress</h3>
+                        <p id="progress-filename">filename.mp4</p>
+                    </div>
+                    <div class="progress-ring-container">
+                        <svg class="progress-ring" width="180" height="180">
+                            <circle class="progress-ring-bg" cx="90" cy="90" r="80" />
+                            <circle class="progress-ring-fill" id="progress-ring" cx="90" cy="90" r="80" />
+                        </svg>
+                        <div class="progress-percentage" id="progress-percent">0%</div>
+                    </div>
+                    <div class="progress-stats">
+                        <div class="stat">
+                            <span class="stat-label">Time Elapsed</span>
+                            <span class="stat-value" id="time-elapsed">00:00:00</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Current Position</span>
+                            <span class="stat-value" id="time-position">00:00:00</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Speed</span>
+                            <span class="stat-value" id="encode-speed">0.00x</span>
+                        </div>
+                    </div>
+                    <button id="cancel-btn" class="cancel-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" />
+                            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" />
+                        </svg>
+                        Cancel
+                    </button>
+                </div>
+                <div id="complete-view" class="complete-view hidden">
+                    <div class="success-icon">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                            <polyline points="8,12 11,15 16,9" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                    <h2>Encoding Complete!</h2>
+                    <p id="output-path" class="output-path">Output saved to...</p>
+                    <div class="complete-actions">
+                        <button id="open-file-btn" class="action-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"
+                                    stroke="currentColor" stroke-width="2" />
+                                <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2" />
+                            </svg>
+                            Open File
+                        </button>
+                        <button id="open-folder-btn" class="action-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                                    stroke="currentColor" stroke-width="2" />
+                            </svg>
+                            Show in Folder
+                        </button>
+                    </div>
+                    <button id="new-encode-btn" class="primary-btn secondary">
+                        Encode Another Video
+                    </button>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="sidebar.js"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>
