@@ -1,4 +1,15 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+
+// Set application name and App User Model ID for Windows
+app.setName('Video Toolbox');
+if (process.platform === 'win32') {
+    app.setAppUserModelId('com.fax1015.videotoolbox');
+}
+
+// Remove the default menu
+Menu.setApplicationMenu(null);
+
+
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -18,7 +29,7 @@ function createWindow() {
         minHeight: 700,
         show: false,
         backgroundColor: '#0a0f0e',
-        icon: path.join(__dirname, 'assets', 'icons', 'favicon.ico'),
+        icon: path.join(__dirname, 'assets', 'icons', 'favicon.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
