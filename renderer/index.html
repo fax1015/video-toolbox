@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Toolbox</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="app-container">
         <div class="bg-orb orb-1"></div>
@@ -46,9 +48,22 @@
                             </path>
                         </svg>
                     </button>
+                    <div class="sidebar-divider"></div>
+                    <button class="nav-item" id="nav-queue" title="Encoding Queue">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        <span class="queue-badge hidden" id="queue-badge">0</span>
+                    </button>
                 </div>
                 <div class="sidebar-bottom">
-                    <button class="nav-item" title="Settings">
+                    <button class="nav-item" id="nav-settings" title="Settings">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="3"></circle>
@@ -111,7 +126,33 @@
                         </div>
                     </div>
                     <div class="settings-panel">
-                        <h4 class="panel-title">Output Settings</h4>
+                        <div class="panel-header-actions">
+                            <h4 class="panel-title">Output Settings</h4>
+                            <div class="preset-container">
+                                <button id="preset-menu-btn" class="preset-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                    Preset: <span id="current-preset-name">Default</span>
+                                </button>
+                                <div id="preset-dropdown" class="preset-dropdown hidden">
+                                    <div class="preset-category">Built-in</div>
+                                    <div class="preset-item" data-preset="fast-1080p">Fast 1080p</div>
+                                    <div class="preset-item" data-preset="hq-1080p">High Quality 1080p</div>
+                                    <div class="preset-item" data-preset="discord">Discord / Small</div>
+                                    <div class="preset-item" data-preset="hevc-mkv">HEVC MKV (Small)</div>
+                                    <div class="preset-divider"></div>
+                                    <div class="preset-category">Custom</div>
+                                    <div id="custom-presets-list">
+                                        <div class="preset-empty">No custom presets</div>
+                                    </div>
+                                    <div class="preset-divider"></div>
+                                    <button id="save-preset-btn" class="preset-action-btn">Save Current as
+                                        Preset...</button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="settings-grid">
                             <div class="control-group">
                                 <label for="format-select">Container</label>
@@ -174,12 +215,41 @@
                             </select>
                         </div>
                     </div>
-                    <button id="convert-btn" class="primary-btn">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <polygon points="5,3 19,12 5,21" fill="currentColor" />
-                        </svg>
-                        Start Encoding
-                    </button>
+
+                    <!-- Advanced Section -->
+                    <div class="advanced-section-toggle">
+                        <button id="toggle-advanced-btn" class="text-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                            Advanced FFmpeg Options
+                        </button>
+                    </div>
+                    <div id="advanced-panel" class="advanced-panel hidden">
+                        <div class="control-group">
+                            <label for="custom-ffmpeg-args">Custom Flags</label>
+                            <textarea id="custom-ffmpeg-args" placeholder="-vf scale=1280:-1 -af volume=1.5"></textarea>
+                            <p class="help-text">Experimental: Custom flags will be appended to the command.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-actions">
+                        <button id="add-queue-btn" class="secondary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" />
+                                <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" />
+                            </svg>
+                            Add to Queue
+                        </button>
+                        <button id="convert-btn" class="primary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <polygon points="5,3 19,12 5,21" fill="currentColor" />
+                            </svg>
+                            Start Encoding
+                        </button>
+                    </div>
                 </div>
                 <div id="progress-view" class="progress-view hidden">
                     <div class="progress-header">
@@ -248,10 +318,134 @@
                         Encode Another Video
                     </button>
                 </div>
+                <div id="settings-view" class="dashboard hidden">
+                    <div class="settings-grid-large">
+                        <section class="settings-section">
+                            <h4 class="panel-title">Hardware Support</h4>
+                            <div class="control-group">
+                                <label>Hardware Acceleration</label>
+                                <div class="hw-accel-wrapper">
+                                    <select id="hw-accel">
+                                        <option value="auto">Auto Select</option>
+                                        <option value="none">None (CPU Only)</option>
+                                        <option value="nvenc">NVIDIA (NVENC)</option>
+                                        <option value="amf">AMD (AMF)</option>
+                                        <option value="qsv">Intel (QuickSync)</option>
+                                    </select>
+                                    <span id="hw-auto-tag" class="auto-tag hidden">(auto selected)</span>
+                                </div>
+                                <p class="help-text">Experimental: May not work on all systems.</p>
+                            </div>
+                        </section>
+
+                        <section class="settings-section">
+                            <h4 class="panel-title">Output Files</h4>
+                            <div class="control-group">
+                                <label>Suffix</label>
+                                <input type="text" id="output-suffix" value="_encoded" placeholder="_encoded">
+                            </div>
+                            <div class="control-group">
+                                <br>
+                                <label>Output Folder</label>
+                                <div class="folder-input-group">
+                                    <input type="text" id="output-folder" readonly placeholder="Same as source">
+                                    <button id="select-output-folder-btn" class="action-btn small">Browse</button>
+                                </div>
+                            </div>
+                            <div class="control-group">
+                                <label class="checkbox-label">
+                                    <span>Overwrite existing files</span>
+                                    <input type="checkbox" id="overwrite-files">
+                                </label>
+                            </div>
+                            <div class="control-group">
+                                <label>Default Format</label>
+                                <select id="default-format">
+                                    <option value="mp4">MP4</option>
+                                    <option value="mkv">MKV</option>
+                                    <option value="webm">WebM</option>
+                                </select>
+                            </div>
+                        </section>
+
+                        <section class="settings-section">
+                            <h4 class="panel-title">Behavior</h4>
+                            <div class="control-group">
+                                <label class="checkbox-label">
+                                    <span>Notify on completion</span>
+                                    <input type="checkbox" id="notify-on-complete" checked>
+                                </label>
+                            </div>
+                        </section>
+
+                        <section class="settings-section">
+                            <h4 class="panel-title">Appearance</h4>
+                            <div class="control-group">
+                                <label>Theme</label>
+                                <select id="theme-select">
+                                    <option value="dark">Dark (Default)</option>
+                                    <option value="light">Light</option>
+                                    <option value="oled">Pure Black</option>
+                                </select>
+                            </div>
+                        </section>
+
+                        <section class="settings-section about-section">
+                            <h4 class="panel-title">About</h4>
+                            <div class="about-content">
+                                <p><strong>Video Toolbox</strong> v0.1.0</p>
+                                <p>a simple video converter</p>
+                                <div class="credits">
+                                    <span>by fax1015</span>
+                                    <span>built with Electron & FFmpeg</span>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+                <div id="queue-view" class="dashboard hidden">
+                    <div class="queue-header">
+                        <h2>Queue</h2>
+                        <div class="queue-actions">
+                            <button id="queue-add-btn" class="action-btn" title="Add to Queue">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                Add
+                            </button>
+                            <button id="clear-queue-btn" class="action-btn danger">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path
+                                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                                    </path>
+                                </svg>
+                                Clear All
+                            </button>
+                            <button id="start-queue-btn" class="primary-btn small">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <polygon id="start-queue-icon" points="5,3 19,12 5,21" fill="currentColor" />
+                                    <rect id="pause-queue-icon" x="6" y="4" width="4" height="16" fill="currentColor"
+                                        class="hidden" />
+                                    <rect id="pause-queue-icon-2" x="14" y="4" width="4" height="16" fill="currentColor"
+                                        class="hidden" />
+                                </svg>
+                                <span id="start-queue-text">Start Queue</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="queue-list" class="queue-list">
+                        <!-- Queue items will be injected here -->
+                        <div class="empty-queue-msg">Queue is empty</div>
+                    </div>
+                </div>
             </main>
         </div>
     </div>
-    <script src="sidebar.js"></script>
     <script src="renderer.js"></script>
 </body>
+
 </html>
