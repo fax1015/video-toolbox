@@ -1,41 +1,35 @@
-/**
- * Media Converter Renderer
- * Handles UI interactions and IPC communication.
- */
-
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Renderer initialized');
 
-    // Safe element selector
     const get = (id) => {
         const el = document.getElementById(id);
         if (!el) console.warn(`Element with ID "${id}" not found`);
         return el;
     };
 
-    // --- Views ---
     const dropZone = get('drop-zone');
     const folderDropZone = get('folder-drop-zone');
+    const extractAudioDropZone = get('extract-audio-drop-zone');
+    const extractAudioDashboard = get('extract-audio-dashboard');
+    const trimDropZone = get('trim-drop-zone');
+    const trimDashboard = get('trim-dashboard');
     const dashboard = get('file-dashboard');
     const progressView = get('progress-view');
     const completeView = get('complete-view');
     const settingsView = get('settings-view');
     const queueView = get('queue-view');
 
-    // --- Dashboard Elements ---
     const filenameEl = get('filename');
     const resolutionEl = get('file-resolution');
     const durationEl = get('file-duration');
     const bitrateEl = get('file-bitrate');
     const fileIcon = get('file-icon');
 
-    // --- Controls ---
     const backBtn = get('back-btn');
     const settingsBackBtn = get('settings-back-btn');
     const convertBtn = get('convert-btn');
     const cancelBtn = get('cancel-btn');
 
-    // --- Settings ---
     const formatSelect = get('format-select');
     const codecSelect = get('codec-select');
     const presetSelect = get('preset-select');
@@ -44,27 +38,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const crfValue = get('crf-value');
     const audioBitrateSelect = get('audio-bitrate');
 
-    // --- Progress Elements ---
     const progressPercent = get('progress-percent');
     const progressRing = get('progress-ring');
+    const progressTitle = get('progress-title');
     const timeElapsed = get('time-elapsed');
     const encodeSpeed = get('encode-speed');
     const progressFilename = get('progress-filename');
     const timePosition = get('time-position');
+    const completeTitle = get('complete-title');
 
-    // --- Complete Elements ---
     const outputPathEl = get('output-path');
     const openFileBtn = get('open-file-btn');
     const openFolderBtn = get('open-folder-btn');
     const newEncodeBtn = get('new-encode-btn');
 
-    // --- Navigation Elements ---
     const navVideo = get('nav-video');
     const navFolder = get('nav-folder');
+    const navTrim = get('nav-trim');
+    const navExtractAudio = get('nav-extract-audio');
     const navSettings = get('nav-settings');
     const navQueue = get('nav-queue');
 
-    // --- Queue Elements ---
     const addQueueBtn = get('add-queue-btn');
     const queueList = get('queue-list');
     const queueBadge = get('queue-badge');
@@ -72,36 +66,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const startQueueBtn = get('start-queue-btn');
     const queueAddBtn = get('queue-add-btn');
 
-    // --- Global Settings Elements ---
     const hwAccelSelect = get('hw-accel');
     const outputSuffixInput = get('output-suffix');
     const defaultFormatSelect = get('default-format');
     const themeSelectAttr = get('theme-select');
+    const accentColorSelect = get('accent-color-select');
+    const workPrioritySelect = get('work-priority-select');
     const outputFolderInput = get('output-folder');
     const selectOutputFolderBtn = get('select-output-folder-btn');
     const overwriteFilesCheckbox = get('overwrite-files');
     const notifyOnCompleteCheckbox = get('notify-on-complete');
     const hwAutoTag = get('hw-auto-tag');
 
-    // --- Advanced Elements ---
     const toggleAdvancedBtn = get('toggle-advanced-btn');
     const advancedPanel = get('advanced-panel');
     const customFfmpegArgs = get('custom-ffmpeg-args');
 
-    // --- Queue Icon Elements ---
+    const revertVideoBtn = get('revert-video-btn');
+
     const startQueueIcon = get('start-queue-icon');
     const pauseQueueIcon = get('pause-queue-icon');
     const pauseQueueIcon2 = get('pause-queue-icon-2');
     const startQueueText = get('start-queue-text');
 
-    // --- Preset Elements ---
     const presetMenuBtn = get('preset-menu-btn');
     const presetDropdown = get('preset-dropdown');
     const currentPresetName = get('current-preset-name');
     const customPresetsList = get('custom-presets-list');
     const savePresetBtn = get('save-preset-btn');
 
-    // --- New Controls ---
+    const resolutionSelect = get('resolution-select');
     const fpsSelect = get('fps-select');
     const vBitrateInput = get('v-bitrate');
     const twoPassCheckbox = get('two-pass');
@@ -123,19 +117,36 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentFilePath = null;
     let currentOutputPath = null;
     let isEncoding = false;
+    let lastActiveViewId = null;
     let isCancelled = false;
     let encodingQueue = [];
     let isQueueRunning = false;
     let currentlyEncodingItemId = null;
     let currentEditingQueueId = null;
+    let currentPresetUsed = null;
+    let currentPresetOriginalSettings = null;
+    let isCurrentSettingsModified = false;
+    let extractFilePath = null;
+    let trimFilePath = null;
+    let trimDurationSeconds = 0;
+    let trimStartSeconds = 0;
+    let trimEndSeconds = 0;
+    let isExtracting = false;
+    let isTrimming = false;
+    let originalFileBitrate = 0;
 
-    // --- Settings Persistence ---
+    const trimmedDurationEl = get('trimmed-duration');
+    const estimatedFileSizeEl = get('estimated-file-size');
+
+    
     const APP_SETTINGS_KEY = 'video_toolbox_settings';
     let appSettings = {
         hwAccel: 'auto',
         outputSuffix: '_encoded',
         defaultFormat: 'mp4',
         theme: 'dark',
+        accentColor: 'green',
+        workPriority: 'normal',
         outputFolder: '',
         overwriteFiles: false,
         notifyOnComplete: true
@@ -154,10 +165,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveSettings() {
-        if (hwAccelSelect) appSettings.hwAccel = hwAccelSelect.value;
+        if (hwAccelSelect) {
+            const selected = hwAccelSelect.value;
+            if (selected === 'auto') {
+                    appSettings.hwAccel = 'auto';
+                } else {
+                    const resolved = getAutoEncoder();
+                    if (appSettings.hwAccel === 'auto' && selected === resolved) {
+                        appSettings.hwAccel = 'auto';
+                    } else {
+                        appSettings.hwAccel = selected;
+                    }
+                }
+        }
         if (outputSuffixInput) appSettings.outputSuffix = outputSuffixInput.value;
         if (defaultFormatSelect) appSettings.defaultFormat = defaultFormatSelect.value;
         if (themeSelectAttr) appSettings.theme = themeSelectAttr.value;
+        if (accentColorSelect) appSettings.accentColor = accentColorSelect.value;
+        if (workPrioritySelect) appSettings.workPriority = workPrioritySelect.value;
         if (outputFolderInput) appSettings.outputFolder = outputFolderInput.value;
         if (overwriteFilesCheckbox) appSettings.overwriteFiles = overwriteFilesCheckbox.checked;
         if (notifyOnCompleteCheckbox) appSettings.notifyOnComplete = notifyOnCompleteCheckbox.checked;
@@ -167,23 +192,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applySettings() {
-        if (hwAccelSelect) hwAccelSelect.value = appSettings.hwAccel;
+        if (hwAccelSelect) {
+            if (appSettings.hwAccel === 'auto') {
+                const resolved = getAutoEncoder();
+                hwAccelSelect.value = resolved !== 'none' ? resolved : 'none';
+                hwAccelSelect.dataset.auto = 'true';
+            } else {
+                hwAccelSelect.value = appSettings.hwAccel;
+                delete hwAccelSelect.dataset.auto;
+            }
+        }
         if (outputSuffixInput) outputSuffixInput.value = appSettings.outputSuffix;
         if (defaultFormatSelect) defaultFormatSelect.value = appSettings.defaultFormat;
         if (themeSelectAttr) themeSelectAttr.value = appSettings.theme;
+        if (accentColorSelect) accentColorSelect.value = appSettings.accentColor;
+        if (workPrioritySelect) workPrioritySelect.value = appSettings.workPriority;
         if (outputFolderInput) outputFolderInput.value = appSettings.outputFolder;
         if (overwriteFilesCheckbox) overwriteFilesCheckbox.checked = appSettings.overwriteFiles;
         if (notifyOnCompleteCheckbox) notifyOnCompleteCheckbox.checked = appSettings.notifyOnComplete;
 
-        // Apply theme
+        
         document.body.classList.remove('oled-theme', 'light-theme');
         if (appSettings.theme === 'oled') document.body.classList.add('oled-theme');
         if (appSettings.theme === 'light') document.body.classList.add('light-theme');
 
-        // Update auto tag
+        
+        applyAccentColor();
+
+        
         updateHardwareAutoTag();
 
-        // Apply default format to dashboard
+        
         if (formatSelect && !currentEditingQueueId) {
             formatSelect.value = appSettings.defaultFormat;
         }
@@ -193,10 +232,57 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             detectedEncoders = await electron.getEncoders();
             console.log('Detected encoders:', detectedEncoders);
+            
+            if (appSettings.hwAccel === 'auto' && hwAccelSelect) {
+                const resolved = getAutoEncoder();
+                hwAccelSelect.value = resolved !== 'none' ? resolved : 'none';
+                hwAccelSelect.dataset.auto = 'true';
+            }
             updateHardwareAutoTag();
         } catch (e) {
             console.error('Error detecting hardware:', e);
         }
+    }
+
+    
+    function resetVideoDefaults() {
+        if (!confirm('Revert encoding settings for this video to defaults?')) return;
+
+        if (formatSelect) formatSelect.value = appSettings.defaultFormat || 'mp4';
+        if (codecSelect) codecSelect.value = 'h264';
+        if (presetSelect) presetSelect.value = 'medium';
+        if (resolutionSelect) resolutionSelect.value = 'source';
+        if (fpsSelect) fpsSelect.value = 'source';
+
+        const crfRadio = document.querySelector('input[name="rate-mode"][value="crf"]');
+        if (crfRadio) {
+            crfRadio.checked = true;
+            crfRadio.dispatchEvent(new Event('change'));
+        }
+
+        if (crfSlider) {
+            crfSlider.value = 23;
+            if (crfValue) crfValue.textContent = '23';
+        }
+        if (vBitrateInput) vBitrateInput.value = '2500';
+        if (twoPassCheckbox) twoPassCheckbox.checked = false;
+        if (audioSelect) audioSelect.value = 'aac';
+        if (audioBitrateSelect) audioBitrateSelect.value = '192k';
+        if (customFfmpegArgs) customFfmpegArgs.value = '';
+
+        
+        if (currentFilePath) {
+            audioTracks = [{ isSource: true, name: 'Source Audio' }];
+        } else {
+            audioTracks = [];
+        }
+        subtitleTracks = [];
+        chaptersFile = null;
+
+        renderAudioTracks();
+        renderSubtitleTracks();
+        if (chaptersInfo) chaptersInfo.classList.add('hidden');
+        if (chapterImportZone) chapterImportZone.classList.remove('hidden');
     }
 
     function updateHardwareAutoTag() {
@@ -217,12 +303,48 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'none';
     }
 
+    function applyAccentColor() {
+        const colors = {
+            green: { primary: '#52d698', secondary: '#51d497', glow: 'rgba(99, 241, 189, 0.05)' },
+            blue: { primary: '#60a5fa', secondary: '#3b82f6', glow: 'rgba(96, 165, 250, 0.05)' },
+            purple: { primary: '#a78bfa', secondary: '#8b5cf6', glow: 'rgba(167, 139, 250, 0.05)' },
+            pink: { primary: '#f472b6', secondary: '#ec4899', glow: 'rgba(244, 114, 182, 0.05)' },
+            orange: { primary: '#fb923c', secondary: '#f97316', glow: 'rgba(251, 146, 60, 0.05)' },
+            red: { primary: '#f87171', secondary: '#ef4444', glow: 'rgba(248, 113, 113, 0.05)' },
+            cyan: { primary: '#22d3ee', secondary: '#06b6d4', glow: 'rgba(34, 211, 238, 0.05)' }
+        };
+
+        const color = colors[appSettings.accentColor] || colors.green;
+        document.documentElement.style.setProperty('--accent-primary', color.primary);
+        document.documentElement.style.setProperty('--accent-secondary', color.secondary);
+        document.documentElement.style.setProperty('--accent-glow', color.glow);
+    }
+
     detectHardware();
     loadSettings();
 
-    [hwAccelSelect, outputSuffixInput, defaultFormatSelect, themeSelectAttr, overwriteFilesCheckbox, notifyOnCompleteCheckbox].forEach(el => {
-        if (el) el.addEventListener('change', saveSettings);
-    });
+    
+    const changeElements = [outputSuffixInput, defaultFormatSelect, themeSelectAttr, accentColorSelect, workPrioritySelect, overwriteFilesCheckbox, notifyOnCompleteCheckbox, outputFolderInput];
+    if (hwAccelSelect) {
+        hwAccelSelect.addEventListener('change', () => {
+            
+            delete hwAccelSelect.dataset.auto;
+            saveSettings();
+        });
+    }
+    changeElements.forEach(el => { if (el) el.addEventListener('change', saveSettings); });
+
+    if (revertVideoBtn) revertVideoBtn.addEventListener('click', resetVideoDefaults);
+
+    const revertOutputFolderBtn = get('revert-output-folder-btn');
+    if (revertOutputFolderBtn) {
+        revertOutputFolderBtn.addEventListener('click', () => {
+            if (outputFolderInput) {
+                outputFolderInput.value = '';
+                saveSettings();
+            }
+        });
+    }
 
     if (selectOutputFolderBtn) {
         selectOutputFolderBtn.addEventListener('click', async () => {
@@ -241,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Tab Logic ---
+    
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
 
@@ -253,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- Rate Control Toggle ---
+    
     const rateModeRadios = document.querySelectorAll('input[name="rate-mode"]');
     if (rateModeRadios) {
         rateModeRadios.forEach(radio => {
@@ -265,7 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Audio Tracks ---
+    
     if (addAudioBtn) {
         addAudioBtn.addEventListener('click', async () => {
             const path = await electron.selectFile();
@@ -314,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Subtitle Tracks ---
+    
     if (addSubtitleBtn) {
         addSubtitleBtn.addEventListener('click', async () => {
             const path = await electron.selectFile();
@@ -348,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    // --- Chapters ---
+    
     if (chapterImportZone) {
         chapterImportZone.addEventListener('click', async () => {
             const path = await electron.selectFile();
@@ -369,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Verify Electron bridge
+    
     if (!window.electron) {
         console.error('Electron bridge not found! Check preload script configuration.');
         return;
@@ -377,17 +499,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const { electron } = window;
 
-    // --- Helpers ---
+    
     function showView(view) {
         if (!view) return;
-        [dropZone, folderDropZone, dashboard, progressView, completeView, settingsView, queueView].forEach(v => {
+        [dropZone, folderDropZone, extractAudioDropZone, extractAudioDashboard, trimDropZone, trimDashboard, dashboard, progressView, completeView, settingsView, queueView].forEach(v => {
             if (v) v.classList.add('hidden');
         });
         view.classList.remove('hidden');
     }
 
     function toggleSidebar(disabled) {
-        [navVideo, navFolder, navSettings, navQueue].forEach(btn => {
+        [navVideo, navFolder, navTrim, navExtractAudio, navSettings, navQueue].forEach(btn => {
             if (btn) btn.classList.toggle('disabled', disabled);
         });
     }
@@ -400,10 +522,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (encodeSpeed) encodeSpeed.textContent = '0.00x';
     }
 
-    // --- Navigation logic ---
+    
     function resetNav() {
         if (navVideo) navVideo.classList.remove('active');
         if (navFolder) navFolder.classList.remove('active');
+        if (navTrim) navTrim.classList.remove('active');
+        if (navExtractAudio) navExtractAudio.classList.remove('active');
         if (navSettings) navSettings.classList.remove('active');
         if (navQueue) navQueue.classList.remove('active');
     }
@@ -436,6 +560,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (navTrim) {
+        navTrim.addEventListener('click', () => {
+            resetNav();
+            navTrim.classList.add('active');
+            showView(trimDropZone);
+        });
+    }
+    if (navExtractAudio) {
+        navExtractAudio.addEventListener('click', () => {
+            resetNav();
+            navExtractAudio.classList.add('active');
+            showView(extractAudioDropZone);
+        });
+    }
     if (navSettings) {
         navSettings.addEventListener('click', () => {
             console.log('Nav: Settings clicked');
@@ -445,9 +583,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Event Listeners ---
+    
 
-    // Drag and Drop
+    
     if (dropZone) {
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -482,7 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Folder Drop Zone
+    
     if (folderDropZone) {
         folderDropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -498,7 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
             folderDropZone.classList.remove('drag-over');
             const folder = e.dataTransfer.files[0];
             if (folder) {
-                // Electron gives us the path
+                
                 handleFolderSelection(folder.path);
             }
         });
@@ -515,6 +653,378 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Extract Audio ---
+    const extractFilenameEl = get('extract-filename');
+    const extractFileIcon = get('extract-file-icon');
+    const extractFileDuration = get('extract-file-duration');
+    const extractAudioFormatSelect = get('extract-audio-format');
+    const extractAudioBitrateSelect = get('extract-audio-bitrate');
+    const extractAddQueueBtn = get('extract-add-queue-btn');
+    const extractBitrateGroup = get('extract-bitrate-group');
+    const extractAudioBtn = get('extract-audio-btn');
+    const extractBackBtn = get('extract-back-btn');
+
+    function updateExtractBitrateVisibility() {
+        if (!extractAudioFormatSelect || !extractBitrateGroup) return;
+        const format = extractAudioFormatSelect.value;
+        extractBitrateGroup.classList.toggle('hidden', format === 'flac' || format === 'wav');
+    }
+    if (extractAudioFormatSelect) {
+        extractAudioFormatSelect.addEventListener('change', updateExtractBitrateVisibility);
+    }
+
+    async function handleExtractFileSelection(filePath) {
+        extractFilePath = filePath;
+        const name = filePath.split(/[\\/]/).pop();
+        const ext = name.split('.').pop().toUpperCase();
+        if (extractFilenameEl) extractFilenameEl.textContent = name;
+        if (extractFileIcon) extractFileIcon.textContent = ext;
+        if (extractFileDuration) extractFileDuration.textContent = '...';
+        showView(extractAudioDashboard);
+        updateExtractBitrateVisibility();
+        try {
+            const metadata = await electron.getMetadata(filePath);
+            if (extractFileDuration) extractFileDuration.textContent = metadata.duration;
+        } catch (e) { if (extractFileDuration) extractFileDuration.textContent = 'Unknown'; }
+    }
+
+    if (extractAudioDropZone) {
+        extractAudioDropZone.addEventListener('dragover', (e) => { e.preventDefault(); extractAudioDropZone.classList.add('drag-over'); });
+        extractAudioDropZone.addEventListener('dragleave', () => extractAudioDropZone.classList.remove('drag-over'));
+        extractAudioDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            extractAudioDropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) handleExtractFileSelection(file.path);
+        });
+        extractAudioDropZone.addEventListener('click', async () => {
+            const path = await electron.selectFile();
+            if (path) handleExtractFileSelection(path);
+        });
+    }
+    if (extractBackBtn) extractBackBtn.addEventListener('click', () => { showView(extractAudioDropZone); resetNav(); navExtractAudio.classList.add('active'); });
+    if (extractAddQueueBtn) {
+        extractAddQueueBtn.addEventListener('click', () => {
+            if (!extractFilePath) return;
+            const format = extractAudioFormatSelect ? extractAudioFormatSelect.value : 'mp3';
+            const bitrate = (format === 'flac' || format === 'wav') ? null : (extractAudioBitrateSelect ? extractAudioBitrateSelect.value : '192k');
+            addToQueue({ input: extractFilePath, format, bitrate }, 'extract');
+            showView(queueView);
+            resetNav();
+            navQueue.classList.add('active');
+        });
+    }
+    if (extractAudioBtn) {
+        extractAudioBtn.addEventListener('click', () => {
+            if (!extractFilePath) return;
+            isExtracting = true;
+            if (progressTitle) progressTitle.textContent = 'Extracting audio...';
+            if (progressFilename) progressFilename.textContent = extractFilePath.split(/[\\/]/).pop();
+            resetProgress();
+            showView(progressView);
+            toggleSidebar(true);
+            lastActiveViewId = 'extractAudioDropZone';
+            const format = extractAudioFormatSelect ? extractAudioFormatSelect.value : 'mp3';
+            const bitrate = (format === 'flac' || format === 'wav') ? null : (extractAudioBitrateSelect ? extractAudioBitrateSelect.value : '192k');
+            electron.extractAudio({ 
+                input: extractFilePath, 
+                format, 
+                bitrate,
+                workPriority: appSettings.workPriority || 'normal'
+            });
+        });
+    }
+
+    // --- Trim Video ---
+    const trimFilenameEl = get('trim-filename');
+    const trimFileIcon = get('trim-file-icon');
+    const trimFileDuration = get('trim-file-duration');
+    const trimStartInput = get('trim-start');
+    const trimEndInput = get('trim-end');
+    const trimTimeline = get('trim-timeline');
+    const trimTrack = get('trim-track');
+    const trimInactiveStart = get('trim-inactive-start');
+    const trimRangeHandles = get('trim-range-handles');
+    const trimActiveSegment = get('trim-active-segment');
+    const trimInactiveEnd = get('trim-inactive-end');
+    const trimHandleLeft = get('trim-handle-left');
+    const trimHandleRight = get('trim-handle-right');
+    const trimWaveformWrap = get('trim-waveform-wrap');
+    const trimWaveformImg = get('trim-waveform-img');
+    const trimVideoBtn = get('trim-video-btn');
+    const trimAddQueueBtn = get('trim-add-queue-btn');
+    const trimBackBtn = get('trim-back-btn');
+
+    function timeStringToSeconds(str) {
+        if (!str || typeof str !== 'string') return 0;
+        
+        // Check if there's a decimal/milliseconds part
+        const [timePart, msPart] = str.trim().split('.');
+        const parts = timePart.split(':').map(Number).filter(n => !isNaN(n));
+        
+        let totalSeconds = 0;
+        if (parts.length === 3) totalSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        else if (parts.length === 2) totalSeconds = parts[0] * 60 + parts[1];
+        else if (parts.length === 1) totalSeconds = parts[0];
+        
+        // Add milliseconds/centiseconds if present
+        if (msPart) {
+            const cs = parseInt(msPart.padEnd(2, '0').substring(0, 2));
+            if (!isNaN(cs)) {
+                totalSeconds += cs / 100;
+            }
+        }
+        
+        return totalSeconds;
+    }
+
+    function secondsToTimeString(sec) {
+        sec = Math.max(0, sec);
+        const totalCentiseconds = Math.floor(sec * 100);
+        const centiseconds = totalCentiseconds % 100;
+        const totalSeconds = Math.floor(sec);
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        return [h, m, s].map(n => n.toString().padStart(2, '0')).join(':') + '.' + centiseconds.toString().padStart(2, '0');
+    }
+
+    function updateTrimTimelineVisual() {
+        if (!trimDurationSeconds || !trimInactiveStart || !trimInactiveEnd || !trimRangeHandles) return;
+        const startPct = (trimStartSeconds / trimDurationSeconds) * 100;
+        const endPct = (trimEndSeconds / trimDurationSeconds) * 100;
+        const activePct = endPct - startPct;
+        trimInactiveStart.style.width = startPct + '%';
+        trimRangeHandles.style.width = activePct + '%';
+        trimInactiveEnd.style.width = (100 - endPct) + '%';
+    }
+
+    async function handleTrimFileSelection(filePath) {
+        trimFilePath = filePath;
+        const name = filePath.split(/[\\/]/).pop();
+        const ext = name.split('.').pop().toUpperCase();
+        if (trimFilenameEl) trimFilenameEl.textContent = name;
+        if (trimFileIcon) trimFileIcon.textContent = ext;
+        if (trimFileDuration) trimFileDuration.textContent = '...';
+        if (trimWaveformWrap) trimWaveformWrap.classList.remove('has-waveform');
+        if (trimWaveformImg) trimWaveformImg.removeAttribute('src');
+        showView(trimDashboard);
+        // Reset trimmed duration and estimated file size
+        if (trimmedDurationEl) trimmedDurationEl.textContent = '00:00:00';
+        if (estimatedFileSizeEl) estimatedFileSizeEl.textContent = 'Calculating...';
+        try {
+            const metadata = await electron.getMetadata(filePath);
+            trimDurationSeconds = metadata.durationSeconds || 0;
+            if (trimFileDuration) trimFileDuration.textContent = metadata.duration;
+            originalFileBitrate = parseFloat(metadata.bitrate) || 0; // Store bitrate in Kbps
+            trimStartSeconds = 0;
+            trimEndSeconds = trimDurationSeconds;
+            if (trimStartInput) trimStartInput.value = '00:00:00';
+            if (trimEndInput) trimEndInput.value = secondsToTimeString(trimDurationSeconds);
+            updateTrimTimelineVisual();
+            // Call syncTrimInputsFromVisual to update the new elements
+            syncTrimInputsFromVisual();
+            try {
+                const waveformBase64 = await electron.getAudioWaveform(filePath);
+                if (waveformBase64 && trimWaveformImg && trimWaveformWrap) {
+                    trimWaveformImg.src = 'data:image/png;base64,' + waveformBase64;
+                    trimWaveformWrap.classList.add('has-waveform');
+                }
+            } catch (e) { /* no waveform if no audio */ }
+        } catch (e) {
+            if (trimFileDuration) trimFileDuration.textContent = 'Unknown';
+            trimDurationSeconds = 0;
+        }
+    }
+
+    function syncTrimInputsFromVisual() {
+        if (trimStartInput) trimStartInput.value = secondsToTimeString(trimStartSeconds);
+        if (trimEndInput) trimEndInput.value = secondsToTimeString(trimEndSeconds);
+        updateTrimTimelineVisual();
+
+        // Calculate and display trimmed duration
+        const trimmedLengthSeconds = trimEndSeconds - trimStartSeconds;
+        if (trimmedDurationEl) trimmedDurationEl.textContent = secondsToTimeString(trimmedLengthSeconds);
+
+        // Estimate file size
+        estimateTrimmedFileSize(trimmedLengthSeconds);
+    }
+
+    function estimateTrimmedFileSize(trimmedLengthSeconds) {
+        if (!estimatedFileSizeEl || !originalFileBitrate || trimmedLengthSeconds <= 0) {
+            if (estimatedFileSizeEl) estimatedFileSizeEl.textContent = 'N/A';
+            return;
+        }
+
+        const bitrateKbps = originalFileBitrate; // already in Kbps from metadata.bitrate
+        if (bitrateKbps === 0) {
+            if (estimatedFileSizeEl) estimatedFileSizeEl.textContent = 'N/A';
+            return;
+        }
+
+        const estimatedBytes = (trimmedLengthSeconds * bitrateKbps * 1024) / 8; // bits to bytes
+        const estimatedMB = estimatedBytes / (1024 * 1024);
+
+        if (estimatedMB > 1024) {
+            estimatedFileSizeEl.textContent = `${(estimatedMB / 1024.0).toFixed(2)} GB`;
+        } else {
+            estimatedFileSizeEl.textContent = `${estimatedMB.toFixed(2)} MB`;
+        }
+    }
+    if (trimStartInput) {
+        trimStartInput.addEventListener('change', () => {
+            trimStartSeconds = Math.max(0, Math.min(trimEndSeconds - 1, timeStringToSeconds(trimStartInput.value)));
+            trimEndSeconds = Math.max(trimStartSeconds + 1, trimEndSeconds);
+            syncTrimInputsFromVisual();
+        });
+    }
+    if (trimEndInput) {
+        trimEndInput.addEventListener('change', () => {
+            trimEndSeconds = Math.min(trimDurationSeconds, Math.max(trimStartSeconds + 1, timeStringToSeconds(trimEndInput.value)));
+            trimStartSeconds = Math.min(trimStartSeconds, trimEndSeconds - 1);
+            syncTrimInputsFromVisual();
+        });
+    }
+
+    let trimDragging = null;
+    let trimDragStartX = 0;
+    let trimDragInitialStart = 0;
+    let trimDragInitialEnd = 0;
+
+    function trimTrackXToSeconds(clientX) {
+        if (!trimTrack || !trimDurationSeconds) return 0;
+        const rect = trimTrack.getBoundingClientRect();
+        const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        return x * trimDurationSeconds;
+    }
+
+    function onTrimDragMove(e) {
+        if (!trimDragging || !trimDurationSeconds || !trimTrack) return;
+        const sec = trimTrackXToSeconds(e.clientX);
+        if (trimDragging === 'start') {
+            trimStartSeconds = Math.max(0, Math.min(trimEndSeconds - 1, sec));
+            trimEndSeconds = Math.max(trimStartSeconds + 1, trimEndSeconds);
+        } else if (trimDragging === 'end') {
+            trimEndSeconds = Math.min(trimDurationSeconds, Math.max(trimStartSeconds + 1, sec));
+            trimStartSeconds = Math.min(trimStartSeconds, trimEndSeconds - 1);
+        } else if (trimDragging === 'range') {
+            const delta = (e.clientX - trimDragStartX) / trimTrack.getBoundingClientRect().width * trimDurationSeconds;
+            let newStart = trimDragInitialStart + delta;
+            let newEnd = trimDragInitialEnd + delta;
+            if (newStart < 0) {
+                newEnd -= newStart;
+                newStart = 0;
+            }
+            if (newEnd > trimDurationSeconds) {
+                newStart -= (newEnd - trimDurationSeconds);
+                newEnd = trimDurationSeconds;
+            }
+            newStart = Math.max(0, newStart);
+            newEnd = Math.min(trimDurationSeconds, Math.max(newStart + 1, newEnd));
+            trimStartSeconds = newStart;
+            trimEndSeconds = newEnd;
+        }
+        syncTrimInputsFromVisual();
+    }
+
+    function onTrimDragEnd() {
+        trimDragging = null;
+        document.removeEventListener('mousemove', onTrimDragMove);
+        document.removeEventListener('mouseup', onTrimDragEnd);
+    }
+
+    if (trimHandleLeft) {
+        trimHandleLeft.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            if (!trimDurationSeconds) return;
+            trimDragging = 'start';
+            document.addEventListener('mousemove', onTrimDragMove);
+            document.addEventListener('mouseup', onTrimDragEnd);
+        });
+    }
+    if (trimHandleRight) {
+        trimHandleRight.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            if (!trimDurationSeconds) return;
+            trimDragging = 'end';
+            document.addEventListener('mousemove', onTrimDragMove);
+            document.addEventListener('mouseup', onTrimDragEnd);
+        });
+    }
+    if (trimActiveSegment) {
+        trimActiveSegment.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            if (!trimDurationSeconds) return;
+            trimDragging = 'range';
+            trimDragStartX = e.clientX;
+            trimDragInitialStart = trimStartSeconds;
+            trimDragInitialEnd = trimEndSeconds;
+            document.addEventListener('mousemove', onTrimDragMove);
+            document.addEventListener('mouseup', onTrimDragEnd);
+        });
+    }
+
+    if (trimDropZone) {
+        trimDropZone.addEventListener('dragover', (e) => { e.preventDefault(); trimDropZone.classList.add('drag-over'); });
+        trimDropZone.addEventListener('dragleave', () => trimDropZone.classList.remove('drag-over'));
+        trimDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            trimDropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) handleTrimFileSelection(file.path);
+        });
+        trimDropZone.addEventListener('click', async () => {
+            const path = await electron.selectFile();
+            if (path) handleTrimFileSelection(path);
+        });
+    }
+    if (trimBackBtn) trimBackBtn.addEventListener('click', () => { showView(trimDropZone); resetNav(); navTrim.classList.add('active'); });
+    if (trimAddQueueBtn) {
+        trimAddQueueBtn.addEventListener('click', () => {
+            if (!trimFilePath || !trimDurationSeconds) return;
+            if (trimDurationSeconds < 1) {
+                alert('Video is too short to trim.');
+                return;
+            }
+            trimStartSeconds = Math.max(0, timeStringToSeconds(trimStartInput ? trimStartInput.value : '0'));
+            trimEndSeconds = Math.min(trimDurationSeconds, Math.max(trimStartSeconds + 1, timeStringToSeconds(trimEndInput ? trimEndInput.value : '0')));
+            addToQueue({
+                input: trimFilePath,
+                startSeconds: trimStartSeconds,
+                endSeconds: trimEndSeconds,
+                outputFolder: outputFolderInput ? outputFolderInput.value : ''
+            }, 'trim');
+            showView(queueView);
+            resetNav();
+            navQueue.classList.add('active');
+        });
+    }
+    if (trimVideoBtn) {
+        trimVideoBtn.addEventListener('click', () => {
+            if (!trimFilePath || !trimDurationSeconds) return;
+            if (trimDurationSeconds < 1) {
+                alert('Video is too short to trim.');
+                return;
+            }
+            trimStartSeconds = Math.max(0, timeStringToSeconds(trimStartInput ? trimStartInput.value : '0'));
+            trimEndSeconds = Math.min(trimDurationSeconds, Math.max(trimStartSeconds + 1, timeStringToSeconds(trimEndInput ? trimEndInput.value : '0')));
+            isTrimming = true;
+            if (progressTitle) progressTitle.textContent = 'Trimming video...';
+            if (progressFilename) progressFilename.textContent = trimFilePath.split(/[\\/]/).pop();
+            resetProgress();
+            showView(progressView);
+            toggleSidebar(true);
+            lastActiveViewId = 'trimDropZone';
+            electron.trimVideo({
+                input: trimFilePath,
+                startSeconds: trimStartSeconds,
+                endSeconds: trimEndSeconds,
+                outputFolder: outputFolderInput ? outputFolderInput.value : '',
+                workPriority: appSettings.workPriority || 'normal'
+            });
+        });
+    }
+
     async function handleFolderSelection(folderPath) {
         console.log('Folder selected:', folderPath);
         try {
@@ -528,15 +1038,25 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!confirmAdd) return;
 
             files.forEach(file => {
+                const rateMode = document.querySelector('input[name="rate-mode"]:checked')?.value || 'crf';
                 const options = {
                     input: file,
                     format: appSettings.defaultFormat,
                     codec: getEffectiveCodec(),
                     preset: presetSelect ? presetSelect.value : 'medium',
-                    audioCodec: audioSelect ? audioSelect.value : 'aac',
+                    resolution: resolutionSelect ? resolutionSelect.value : 'source',
+                    fps: fpsSelect ? fpsSelect.value : 'source',
+                    rateMode: rateMode,
                     crf: crfSlider ? parseInt(crfSlider.value) : 23,
+                    bitrate: vBitrateInput ? vBitrateInput.value : '2500',
+                    twoPass: twoPassCheckbox ? twoPassCheckbox.checked : false,
+                    audioCodec: audioSelect ? audioSelect.value : 'aac',
                     audioBitrate: audioBitrateSelect ? audioBitrateSelect.value : '192k',
+                    audioTracks: [],
+                    subtitleTracks: [],
+                    chaptersFile: null,
                     outputSuffix: appSettings.outputSuffix,
+                    outputFolder: outputFolderInput ? outputFolderInput.value : '',
                     customArgs: customFfmpegArgs ? customFfmpegArgs.value : ''
                 };
                 addToQueue(options);
@@ -556,6 +1076,8 @@ document.addEventListener('DOMContentLoaded', () => {
         audioTracks = [];
         subtitleTracks = [];
         chaptersFile = null;
+        currentPresetUsed = null;
+        isCurrentSettingsModified = false;
         renderAudioTracks();
         renderSubtitleTracks();
         if (chaptersInfo) chaptersInfo.classList.add('hidden');
@@ -577,23 +1099,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showView(dashboard);
 
-        // Get metadata
+        
         try {
             const metadata = await electron.getMetadata(filePath);
             if (resolutionEl) resolutionEl.textContent = metadata.resolution;
             if (durationEl) durationEl.textContent = metadata.duration;
             if (bitrateEl) bitrateEl.textContent = metadata.bitrate;
 
-            // Add source audio track if metadata suggests it exists or as a placeholder
-            // Note: FFmpeg metadata might not explicitly say 'hasAudio' in the simple JSON we return, 
-            // but we'll add it by default and the user can remove it.
+            
             audioTracks = [{ isSource: true, name: 'Source Audio' }];
             renderAudioTracks();
 
-            // Only apply default format if not editing an existing item (handled in loadQueueItemToDashboard)
+            
             if (formatSelect && !currentEditingQueueId) {
                 formatSelect.value = appSettings.defaultFormat;
             }
+
+            updatePresetStatus();
         } catch (err) {
             console.warn('Could not read metadata:', err);
         }
@@ -620,8 +1142,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (crfSlider) {
         crfSlider.addEventListener('input', () => {
             if (crfValue) crfValue.textContent = crfSlider.value;
+            updatePresetStatus();
         });
     }
+
+    // Track preset status when key settings change
+    const settingElements = [formatSelect, codecSelect, presetSelect, resolutionSelect, audioSelect, audioBitrateSelect, fpsSelect, vBitrateInput, twoPassCheckbox];
+    settingElements.forEach(el => {
+        if (el) {
+            el.addEventListener('change', updatePresetStatus);
+        }
+    });
+
+    const rateRadios = document.querySelectorAll('input[name="rate-mode"]');
+    rateRadios.forEach(radio => {
+        radio.addEventListener('change', updatePresetStatus);
+    });
 
     function getOptionsFromUI() {
         const rateMode = document.querySelector('input[name="rate-mode"]:checked')?.value || 'crf';
@@ -630,6 +1166,7 @@ document.addEventListener('DOMContentLoaded', () => {
             format: formatSelect ? formatSelect.value : appSettings.defaultFormat,
             codec: getEffectiveCodec(),
             preset: presetSelect ? presetSelect.value : 'medium',
+            resolution: resolutionSelect ? resolutionSelect.value : 'source',
             fps: fpsSelect ? fpsSelect.value : 'source',
             rateMode: rateMode,
             crf: crfSlider ? parseInt(crfSlider.value) : 23,
@@ -641,14 +1178,19 @@ document.addEventListener('DOMContentLoaded', () => {
             subtitleTracks: [...subtitleTracks],
             chaptersFile: chaptersFile,
             outputSuffix: appSettings.outputSuffix,
-            customArgs: customFfmpegArgs ? customFfmpegArgs.value : ''
+            outputFolder: outputFolderInput ? outputFolderInput.value : '',
+            customArgs: customFfmpegArgs ? customFfmpegArgs.value : '',
+            workPriority: appSettings.workPriority || 'normal'
         };
     }
 
     if (convertBtn) {
         convertBtn.addEventListener('click', () => {
             if (!currentFilePath) return;
-
+            isExtracting = false;
+            isTrimming = false;
+            if (progressTitle) progressTitle.textContent = 'Encoding in Progress';
+            if (completeTitle) completeTitle.textContent = 'Encoding Complete!';
             const options = getOptionsFromUI();
 
             if (progressFilename) progressFilename.textContent = currentFilePath.split(/[\\/]/).pop();
@@ -703,7 +1245,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (index !== -1) {
             encodingQueue[index].options = options;
             encodingQueue[index].name = options.input.split(/[\\/]/).pop();
-            // Reset status if it was completed or error to allow re-encoding with new settings
+            encodingQueue[index].presetUsed = currentPresetUsed;
+            encodingQueue[index].isModified = isCurrentSettingsModified;
+            
             if (encodingQueue[index].status === 'completed' || encodingQueue[index].status === 'error') {
                 encodingQueue[index].status = 'pending';
                 encodingQueue[index].progress = 0;
@@ -720,17 +1264,16 @@ document.addEventListener('DOMContentLoaded', () => {
         currentEditingQueueId = id;
         currentFilePath = item.options.input;
 
-        // Populate dashboard
+        
         const name = item.options.input.split(/[\\/]/).pop();
         const ext = name.split('.').pop().toUpperCase();
 
         if (filenameEl) filenameEl.textContent = name;
         if (fileIcon) fileIcon.textContent = ext;
 
-        // Apply settings from queue item
+        
         if (formatSelect) formatSelect.value = item.options.format;
-        // Logic to reverse getEffectiveCodec is complex, but we stored the original-ish codec in options.
-        // If it contains hwaccel name, we should map it back to the base codec.
+        
         let baseCodec = item.options.codec;
         if (baseCodec.includes('_')) {
             baseCodec = baseCodec.split('_')[0];
@@ -738,6 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (codecSelect) codecSelect.value = baseCodec;
         if (presetSelect) presetSelect.value = item.options.preset;
+        if (resolutionSelect) resolutionSelect.value = item.options.resolution || 'source';
         if (audioSelect) audioSelect.value = item.options.audioCodec;
         if (crfSlider) {
             crfSlider.value = item.options.crf;
@@ -745,7 +1289,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (audioBitrateSelect) audioBitrateSelect.value = item.options.audioBitrate;
 
-        // Restore tracks
+        
         audioTracks = item.options.audioTracks ? [...item.options.audioTracks] : [];
         subtitleTracks = item.options.subtitleTracks ? [...item.options.subtitleTracks] : [];
         chaptersFile = item.options.chaptersFile || null;
@@ -771,7 +1315,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showView(dashboard);
 
-        // Get metadata
+        updatePresetStatus();
+
+        
         try {
             const metadata = await electron.getMetadata(item.options.input);
             if (resolutionEl) resolutionEl.textContent = metadata.resolution;
@@ -788,7 +1334,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const filePath = await electron.selectFile();
                 if (filePath) {
                     const options = getOptionsFromUI();
-                    options.input = filePath; // Override with the selected file
+                    options.input = filePath;
                     addToQueue(options);
                 }
             } catch (err) {
@@ -797,83 +1343,303 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Preset Logic ---
+    
     const BUILT_IN_PRESETS = {
-        'fast-1080p': { format: 'mp4', codec: 'h264', preset: 'veryfast', crf: 23, audioCodec: 'aac', audioBitrate: '128k' },
-        'hq-1080p': { format: 'mp4', codec: 'h264', preset: 'slow', crf: 18, audioCodec: 'aac', audioBitrate: '192k' },
-        'discord': { format: 'mp4', codec: 'h264', preset: 'medium', crf: 28, audioCodec: 'aac', audioBitrate: '96k' },
-        'hevc-mkv': { format: 'mkv', codec: 'h265', preset: 'medium', crf: 24, audioCodec: 'opus', audioBitrate: '128k' }
+        'fast-480p': { format: 'mp4', codec: 'h264', preset: 'veryfast', crf: 28, resolution: '480p', audioCodec: 'aac', audioBitrate: '96k', fps: 'source', twoPass: false },
+        'fast-720p': { format: 'mp4', codec: 'h264', preset: 'veryfast', crf: 24, resolution: '720p', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
+        'fast-1080p': { format: 'mp4', codec: 'h264', preset: 'veryfast', crf: 23, resolution: '1080p', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
+        'hq-720p': { format: 'mp4', codec: 'h264', preset: 'slow', crf: 20, resolution: '720p', audioCodec: 'aac', audioBitrate: '192k', fps: 'source', twoPass: false },
+        'hq-1080p': { format: 'mp4', codec: 'h264', preset: 'slow', crf: 18, resolution: '1080p', audioCodec: 'aac', audioBitrate: '192k', fps: 'source', twoPass: false },
+        'super-hq-1080p': { format: 'mp4', codec: 'h264', preset: 'slower', crf: 16, resolution: '1080p', audioCodec: 'aac', audioBitrate: '256k', fps: 'source', twoPass: false },
+        'anime': { format: 'mp4', codec: 'h264', preset: 'medium', crf: 20, resolution: 'source', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
+        'film': { format: 'mp4', codec: 'h264', preset: 'slow', crf: 19, resolution: 'source', audioCodec: 'aac', audioBitrate: '192k', fps: 'source', twoPass: false },
+        'iphone': { format: 'mp4', codec: 'h264', preset: 'medium', crf: 22, resolution: '720p', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
+        'ipad': { format: 'mp4', codec: 'h264', preset: 'medium', crf: 21, resolution: '1080p', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
+        'android': { format: 'mp4', codec: 'h264', preset: 'medium', crf: 22, resolution: '1080p', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
+        'streaming': { format: 'mp4', codec: 'h264', preset: 'medium', crf: 25, resolution: '720p', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
+        'archive': { format: 'mkv', codec: 'h265', preset: 'slower', crf: 15, resolution: 'source', audioCodec: 'opus', audioBitrate: '192k', fps: 'source', twoPass: false },
+        'discord': { format: 'mp4', codec: 'h264', preset: 'medium', crf: 28, resolution: '720p', audioCodec: 'aac', audioBitrate: '96k', fps: 'source', twoPass: false },
+        'hevc-mkv': { format: 'mkv', codec: 'h265', preset: 'medium', crf: 24, resolution: 'source', audioCodec: 'opus', audioBitrate: '128k', fps: 'source', twoPass: false }
     };
 
     let customPresets = {};
+    let isCreatingPreset = false;
 
+    
     function loadCustomPresets() {
         const saved = localStorage.getItem('custom_presets');
         if (saved) {
             try { customPresets = JSON.parse(saved); } catch (e) { console.error('Error loading custom presets', e); }
         }
-        renderCustomPresetsList();
+        renderPresetMenu();
     }
 
+    
     function saveCustomPreset(name, settings) {
         customPresets[name] = settings;
         localStorage.setItem('custom_presets', JSON.stringify(customPresets));
-        renderCustomPresetsList();
+        
+        
+        if (currentPresetName) currentPresetName.textContent = name;
+        applyPreset(settings, name);
+        
+        
+        isCreatingPreset = false;
+        renderPresetMenu();
     }
 
-    function renderCustomPresetsList() {
+    
+    function deleteCustomPreset(name) {
+        
+
+        
+        delete customPresets[name];
+        localStorage.setItem('custom_presets', JSON.stringify(customPresets));
+
+        
+        isCreatingPreset = false;
+        renderPresetMenu();
+
+        
+        if (presetDropdown) presetDropdown.classList.remove('hidden');
+        setTimeout(() => {
+            const input = document.getElementById('new-preset-input');
+            if (input) {
+                try { input.focus(); input.select(); } catch (e) { /* ignore */ }
+            }
+        }, 0);
+    }
+
+    
+    function getPresetSettingsFromUI() {
+        return {
+            format: formatSelect ? formatSelect.value : 'mp4',
+            codec: codecSelect ? codecSelect.value : 'h264',
+            preset: presetSelect ? presetSelect.value : 'medium',
+            resolution: resolutionSelect ? resolutionSelect.value : 'source',
+            crf: crfSlider ? parseInt(crfSlider.value) : 23,
+            audioCodec: audioSelect ? audioSelect.value : 'aac',
+            audioBitrate: audioBitrateSelect ? audioBitrateSelect.value : '192k',
+            fps: fpsSelect ? fpsSelect.value : 'source',
+            twoPass: twoPassCheckbox ? twoPassCheckbox.checked : false
+        };
+    }
+
+    
+    function renderPresetMenu() {
         if (!customPresetsList) return;
+
+        
         const keys = Object.keys(customPresets);
+        
+        
+        const formHtml = isCreatingPreset ? `
+            <div id="new-preset-form" class="new-preset-form">
+                <div class="new-preset-input-wrap">
+                    <input id="new-preset-input" type="text" placeholder="Preset name" autocomplete="off" />
+                    <button id="new-preset-save" class="preset-action-btn" title="Save">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="preset-divider"></div>
+        ` : '';
+
+        
+        let listHtml = '';
         if (keys.length === 0) {
-            customPresetsList.innerHTML = '<div class="preset-empty">No custom presets</div>';
-            return;
+            listHtml = '<div class="preset-empty">No custom presets</div>';
+        } else {
+            listHtml = keys.map(name => `
+                <div class="preset-item" data-custom-preset="${name}">
+                    <span class="preset-name">${name}</span>
+                    <button class="preset-remove" type="button" data-delete-preset="${name}">×</button>
+                </div>
+            `).join('');
         }
-        customPresetsList.innerHTML = keys.map(name => `
-            <div class="preset-item" data-custom-preset="${name}">${name}</div>
-        `).join('');
+
+        
+        customPresetsList.innerHTML = formHtml + listHtml;
+
+        
+        
+        
+        if (isCreatingPreset) {
+            const inputEl = document.getElementById('new-preset-input');
+            const saveBtnEl = document.getElementById('new-preset-save');
+
+            if (inputEl) {
+                
+                inputEl.onclick = (e) => e.stopPropagation();
+                inputEl.onmousedown = (e) => e.stopPropagation();
+
+                inputEl.onkeydown = (e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter' && saveBtnEl) saveBtnEl.click();
+                    if (e.key === 'Escape') hideNewPresetForm();
+                };
+
+                
+                setTimeout(() => {
+                    try { inputEl.focus(); inputEl.select(); } catch (err) { /* ignore */ }
+                }, 0);
+            }
+
+            if (saveBtnEl) {
+                
+                saveBtnEl.onclick = (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    const name = (inputEl && inputEl.value) ? inputEl.value.trim() : '';
+                    if (!name) return alert('Please enter a name');
+                    if (customPresets[name] && !confirm('Overwrite existing preset?')) return;
+
+                    try {
+                        const settings = getPresetSettingsFromUI();
+                        saveCustomPreset(name, settings);
+                    } catch (err) {
+                        console.error(err);
+                        alert('Error saving preset');
+                    }
+                };
+            }
+        }
+
+        
+        const deleteBtns = customPresetsList.querySelectorAll('.preset-remove');
+        deleteBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const name = btn.dataset.deletePreset;
+                deleteCustomPreset(name);
+            });
+        });
+
+        
+        const items = customPresetsList.querySelectorAll('.preset-item');
+        items.forEach(item => {
+            item.addEventListener('click', (e) => {
+                
+                if (e.target.closest('.preset-remove')) return;
+                
+                const name = item.dataset.customPreset;
+                if (customPresets[name]) {
+                    applyPreset(customPresets[name], name);
+                    if (presetDropdown) presetDropdown.classList.add('hidden');
+                }
+            });
+        });
     }
 
+    
+    function showNewPresetForm() {
+        isCreatingPreset = true;
+        renderPresetMenu();
+    }
+
+    function hideNewPresetForm() {
+        isCreatingPreset = false;
+        renderPresetMenu();
+    }
+
+    
+
+    
     if (presetMenuBtn) {
         presetMenuBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             presetDropdown.classList.toggle('hidden');
+            
         });
     }
 
-    document.addEventListener('click', () => {
-        if (presetDropdown) presetDropdown.classList.add('hidden');
+    
+    document.addEventListener('click', (e) => {
+        if (!presetDropdown || presetDropdown.classList.contains('hidden')) return;
+        
+        
+        if (presetDropdown.contains(e.target) || (presetMenuBtn && presetMenuBtn.contains(e.target))) {
+            return;
+        }
+        
+        
+        presetDropdown.classList.add('hidden');
+        if (isCreatingPreset) hideNewPresetForm();
     });
 
-    if (presetDropdown) {
-        presetDropdown.addEventListener('click', (e) => {
-            const item = e.target.closest('.preset-item');
-            if (item) {
-                const builtInId = item.dataset.preset;
-                const customId = item.dataset.customPreset;
-                let settings = null;
-                let name = '';
-
-                if (builtInId) {
-                    settings = BUILT_IN_PRESETS[builtInId];
-                    name = item.textContent;
-                } else if (customId) {
-                    settings = customPresets[customId];
-                    name = customId;
-                }
-
-                if (settings) {
-                    applyPreset(settings, name);
-                }
-            }
+    
+    if (savePresetBtn) {
+        savePresetBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showNewPresetForm();
         });
     }
 
+    function checkIfSettingsMatchPreset(presetSettings) {
+        const current = getPresetSettingsFromUI();
+        return JSON.stringify(current) === JSON.stringify(presetSettings);
+    }
+
+    function updatePresetStatus() {
+        // Check if current settings match the originally applied preset
+        if (currentPresetUsed && currentPresetOriginalSettings) {
+            // Compare current settings with original preset settings
+            const currentSettings = getPresetSettingsFromUI();
+            isCurrentSettingsModified = JSON.stringify(currentSettings) !== JSON.stringify(currentPresetOriginalSettings);
+        } else {
+            // No preset is currently applied, so check if settings match any preset
+            let matchedPreset = null;
+            let isModified = false;
+            let matchedSettings = null;
+
+            // Check built-in presets
+            for (const [name, settings] of Object.entries(BUILT_IN_PRESETS)) {
+                if (checkIfSettingsMatchPreset(settings)) {
+                    matchedPreset = name;
+                    isModified = false;
+                    matchedSettings = settings;
+                    break;
+                }
+            }
+
+            // Check custom presets if no match found
+            if (!matchedPreset) {
+                for (const [name, settings] of Object.entries(customPresets)) {
+                    if (checkIfSettingsMatchPreset(settings)) {
+                        matchedPreset = name;
+                        isModified = false;
+                        matchedSettings = settings;
+                        break;
+                    }
+                }
+            }
+
+            // If no preset matched, mark as modified
+            if (!matchedPreset) {
+                isModified = true;
+            }
+
+            currentPresetUsed = matchedPreset;
+            currentPresetOriginalSettings = matchedSettings;
+            isCurrentSettingsModified = isModified;
+        }
+    }
+
+    
     function applyPreset(settings, name) {
+        console.log(`Applying preset: ${name}`, settings);
+        
         if (formatSelect) formatSelect.value = settings.format;
         if (codecSelect) codecSelect.value = settings.codec;
         if (presetSelect) presetSelect.value = settings.preset;
+        if (resolutionSelect && settings.resolution) resolutionSelect.value = settings.resolution;
         if (fpsSelect && settings.fps) fpsSelect.value = settings.fps;
 
+        
         if (settings.rateMode) {
             const radio = document.querySelector(`input[name="rate-mode"][value="${settings.rateMode}"]`);
             if (radio) {
@@ -882,9 +1648,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        
         if (crfSlider) {
             crfSlider.value = settings.crf || 23;
-            if (crfValue) crfValue.textContent = crfSlider.value;
+            
+            crfSlider.dispatchEvent(new Event('input'));
         }
 
         if (vBitrateInput && settings.bitrate) vBitrateInput.value = settings.bitrate;
@@ -892,38 +1660,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (audioSelect) audioSelect.value = settings.audioCodec;
         if (audioBitrateSelect) audioBitrateSelect.value = settings.audioBitrate;
+        
         if (currentPresetName) currentPresetName.textContent = name;
+        
+        // Store the original preset settings for tracking modifications
+        currentPresetUsed = name;
+        currentPresetOriginalSettings = { ...settings };
+        isCurrentSettingsModified = false;
+        
+        updatePresetStatus();
     }
-
-    if (savePresetBtn) {
-        savePresetBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const name = prompt('Enter a name for this preset:');
-            if (name && name.trim()) {
-                const settings = {
-                    format: formatSelect.value,
-                    codec: codecSelect.value,
-                    preset: presetSelect.value,
-                    crf: parseInt(crfSlider.value),
-                    audioCodec: audioSelect.value,
-                    audioBitrate: audioBitrateSelect.value
-                };
-                saveCustomPreset(name.trim(), settings);
-                currentPresetName.textContent = name.trim();
-            }
+    
+    
+    if (presetDropdown) {
+        const builtIns = presetDropdown.querySelectorAll('.preset-item[data-preset]');
+        builtIns.forEach(item => {
+            item.addEventListener('click', () => {
+                const id = item.dataset.preset;
+                if (BUILT_IN_PRESETS[id]) {
+                    applyPreset(BUILT_IN_PRESETS[id], item.textContent);
+                    presetDropdown.classList.add('hidden');
+                }
+            });
         });
     }
 
     loadCustomPresets();
 
-    function addToQueue(options) {
+    function addToQueue(options, taskType = 'encode') {
         const id = Date.now();
+        const name = options.input ? options.input.split(/[\\/]/).pop() : 'Unknown';
         encodingQueue.push({
             id,
             options,
+            taskType,
             status: 'pending',
             progress: 0,
-            name: options.input.split(/[\\/]/).pop()
+            name,
+            presetUsed: taskType === 'encode' ? currentPresetUsed : null,
+            isModified: taskType === 'encode' ? isCurrentSettingsModified : false
         });
         updateQueueUI();
     }
@@ -960,13 +1735,68 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        queueList.innerHTML = encodingQueue.map((item) => `
+        function formatPresetName(name) {
+            // Special cases and formatting for preset names
+            const specialCases = {
+                'hq': 'HQ',
+                'super-hq': 'Super HQ',
+                'iphone': 'iPhone',
+                'ipad': 'iPad',
+                'hevc': 'HEVC'
+            };
+
+            let formatted = name;
+            // Check for special cases first
+            for (const [key, value] of Object.entries(specialCases)) {
+                if (formatted.startsWith(key)) {
+                    formatted = formatted.replace(key, value);
+                }
+            }
+
+            // Capitalize remaining words separated by hyphens
+            formatted = formatted.split('-').map(word => {
+                // Skip if already formatted (all caps or special case)
+                if (word === word.toUpperCase() && word.length > 1) return word;
+                return word.charAt(0).toUpperCase() + word.slice(1);
+            }).join(' ');
+
+            return formatted;
+        }
+
+        function getTaskLabel(item) {
+            if (item.taskType === 'trim') return 'Trim';
+            if (item.taskType === 'extract') return 'Extract audio';
+            return 'Encode';
+        }
+
+        queueList.innerHTML = encodingQueue.map((item) => {
+            let statusText = item.status;
+            if (item.status === 'pending' || item.status === 'failed') {
+                const taskLabel = getTaskLabel(item);
+                if (item.taskType === 'encode') {
+                    let presetInfo = '';
+                    if (item.presetUsed) {
+                        if (item.isModified) presetInfo = 'Custom';
+                        else presetInfo = formatPresetName(item.presetUsed);
+                    } else if (item.isModified) presetInfo = 'Custom';
+                    else presetInfo = 'Default';
+                    statusText = `${item.status} · ${taskLabel} · ${presetInfo}`;
+                } else {
+                    statusText = `${item.status} · ${taskLabel}`;
+                }
+            }
+            const encodingStatus = item.status === 'encoding'
+                ? (item.taskType === 'trim' ? `Trimming... ${item.progress}%` : item.taskType === 'extract' ? `Extracting... ${item.progress}%` : `Encoding... ${item.progress}%`)
+                : null;
+
+            return `
             <div class="queue-item ${item.id === currentlyEncodingItemId ? 'active' : ''} ${item.status === 'completed' ? 'completed' : ''}" 
                  data-id="${item.id}" 
+                 data-task-type="${item.taskType || 'encode'}"
                  onclick="window.loadQueueItem(${item.id})">
                 <div class="queue-item-info">
                     <div class="queue-item-name">${item.name}</div>
-                    <div class="queue-item-status">${item.status === 'encoding' ? `Encoding... ${item.progress}%` : item.status}</div>
+                    <div class="queue-item-status">${encodingStatus !== null ? encodingStatus : statusText}</div>
                 </div>
                 ${item.status === 'encoding' || item.status === 'completed' ? `
                 <div class="queue-item-progress">
@@ -980,7 +1810,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </svg>
                 </button>
             </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
     window.loadQueueItem = (id) => {
@@ -992,6 +1823,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item && item.status === 'completed') {
             return;
         }
+        if (item && (item.taskType === 'trim' || item.taskType === 'extract')) {
+            return;
+        }
         loadQueueItemToDashboard(id);
     };
 
@@ -1001,8 +1835,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (id === currentlyEncodingItemId) {
                 electron.cancelEncode();
                 currentlyEncodingItemId = null;
+                // Reset status and progress for the cancelled running task
+                const item = encodingQueue[index];
+                if (item) {
+                    item.status = 'pending';
+                    item.progress = 0;
+                }
+                toggleSidebar(false); // Enable sidebar after cancelling a running task
+            } else {
+                // If the task is not running, just remove it from the queue
+                encodingQueue.splice(index, 1);
             }
-            encodingQueue.splice(index, 1);
             updateQueueUI();
             if (encodingQueue.length === 0) {
                 isQueueRunning = false;
@@ -1033,9 +1876,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (encodingQueue.length === 0) return;
 
             if (isQueueRunning) {
-                // Pause clicked
+                
                 isQueueRunning = false;
-                // Important: cancel the current encode so the user can interact
+                
                 if (currentlyEncodingItemId !== null) {
                     const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
                     if (item && item.status === 'encoding') {
@@ -1049,7 +1892,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateQueueStatusUI();
                 updateQueueUI();
             } else {
-                // Start or Resume clicked
+                
                 isQueueRunning = true;
                 updateQueueStatusUI();
                 processQueue();
@@ -1076,13 +1919,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function processQueue() {
         if (!isQueueRunning) return;
 
-        // Find the first pending item
+        
         const nextItem = encodingQueue.find(item => item.status === 'pending');
 
         if (!nextItem) {
             isQueueRunning = false;
             currentlyEncodingItemId = null;
-            // Only alert if there were actually items that were completed
+
             if (encodingQueue.some(i => i.status === 'completed')) {
                 alert('Queue processing complete!');
             }
@@ -1099,7 +1942,23 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleSidebar(true);
         updateQueueUI();
         updateQueueStatusUI();
-        electron.startEncode(nextItem.options);
+
+        if (nextItem.taskType === 'trim') {
+            if (progressTitle) progressTitle.textContent = 'Trimming video...';
+            if (progressFilename) progressFilename.textContent = nextItem.name;
+            resetProgress();
+            electron.trimVideo(nextItem.options);
+        } else if (nextItem.taskType === 'extract') {
+            if (progressTitle) progressTitle.textContent = 'Extracting audio...';
+            if (progressFilename) progressFilename.textContent = nextItem.name;
+            resetProgress();
+            electron.extractAudio(nextItem.options);
+        } else {
+            if (progressTitle) progressTitle.textContent = 'Encoding in Progress';
+            if (progressFilename) progressFilename.textContent = nextItem.name;
+            resetProgress();
+            electron.startEncode(nextItem.options);
+        }
     }
 
     if (cancelBtn) {
@@ -1110,7 +1969,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isEncoding = false;
             isQueueRunning = false;
 
-            // If it was a queue, mark current item as pending so it can be restarted
+            
             if (wasQueueRunning && currentlyEncodingItemId !== null) {
                 const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
                 if (item) {
@@ -1122,7 +1981,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentlyEncodingItemId = null;
             toggleSidebar(false);
 
-            if (wasQueueRunning) {
+            if (encodingQueue.length > 0) {
                 showView(queueView);
                 resetNav();
                 navQueue.classList.add('active');
@@ -1134,7 +1993,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Progress Handlers ---
+    
     electron.onProgress((data) => {
         if (isQueueRunning && currentlyEncodingItemId !== null) {
             const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
@@ -1156,8 +2015,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     electron.onComplete((data) => {
         isEncoding = false;
+        const wasExtracting = isExtracting;
+        const wasTrimming = isTrimming;
+        isExtracting = false;
+        isTrimming = false;
+        if (completeTitle) {
+            if (wasExtracting) completeTitle.textContent = 'Extraction Complete!';
+            else if (wasTrimming) completeTitle.textContent = 'Trim Complete!';
+            else completeTitle.textContent = 'Encoding Complete!';
+        }
         if (appSettings.notifyOnComplete) {
-            new Notification('Encoding Complete', {
+            const action = wasExtracting ? 'Extraction' : (wasTrimming ? 'Trim' : 'Encoding');
+            new Notification(action + ' Complete', {
                 body: `File saved to: ${data.outputPath}`
             });
         }
@@ -1180,6 +2049,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     electron.onError((data) => {
         isEncoding = false;
+        isExtracting = false;
+        isTrimming = false;
+        if (progressTitle) progressTitle.textContent = 'Encoding in Progress';
         alert(`Error: ${data.message}`);
         if (isQueueRunning && currentlyEncodingItemId !== null) {
             const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
@@ -1191,13 +2063,51 @@ document.addEventListener('DOMContentLoaded', () => {
             updateQueueStatusUI();
             toggleSidebar(false);
         } else {
-            showView(dashboard);
+            if (encodingQueue.length > 0) {
+                showView(queueView);
+                resetNav();
+                navQueue.classList.add('active');
+                updateQueueStatusUI();
+                updateQueueUI();
+            } else {
+                showView(dashboard);
+            }
             toggleSidebar(false);
         }
     });
 
-    // --- Complete View Actions ---
+    
     if (openFileBtn) openFileBtn.addEventListener('click', () => electron.openFile(currentOutputPath));
     if (openFolderBtn) openFolderBtn.addEventListener('click', () => electron.openFolder(currentOutputPath));
-    if (newEncodeBtn) newEncodeBtn.addEventListener('click', () => showView(dropZone));
+    if (newEncodeBtn) newEncodeBtn.addEventListener('click', () => {
+        if (lastActiveViewId === 'trimDropZone') {
+            showView(trimDropZone);
+            resetNav();
+            navTrim.classList.add('active');
+        } else if (lastActiveViewId === 'extractAudioDropZone') {
+            showView(extractAudioDropZone);
+            resetNav();
+            navExtractAudio.classList.add('active');
+        } else {
+            showView(dropZone);
+        }
+    });
 });
+
+
+function renderPresets(groups) {
+    const container = document.getElementById('preset-dropdown');
+    container.innerHTML = groups.map((group, index) => {
+        // Only add the 'open' attribute if it's one of the first two groups
+        const isOpen = index < 2 ? 'open' : '';
+        
+        return `
+            <details class="preset-group" ${isOpen}>
+                <summary>${group.name}</summary>
+                <div class="preset-items">
+                    ${group.presets.map(p => `<div class="preset-item">${p.name}</div>`).join('')}
+                </div>
+            </details>
+        `;
+    }).join('');
+}

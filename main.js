@@ -13,11 +13,65 @@ Menu.setApplicationMenu(null);
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 
 const FFMPEG_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'bin', 'ffmpeg.exe')
     : path.join(__dirname, 'bin', 'ffmpeg.exe');
 let currentFfmpegProcess = null;
+
+/**
+ * Set process priority for FFmpeg based on user setting
+ * @param {ChildProcess} process - The FFmpeg process
+ * @param {string} priority - Priority level: 'idle', 'low', 'normal', 'high'
+ */
+function setProcessPriority(process, priority = 'normal') {
+    if (!process || !process.pid) return;
+
+    try {
+        const platform = os.platform();
+
+        if (platform === 'win32') {
+            // Windows: Use WMIC to set priority class
+            const priorityMap = {
+                'idle': 64,        // IDLE_PRIORITY_CLASS
+                'low': 16384,      // BELOW_NORMAL_PRIORITY_CLASS
+                'normal': 32,      // NORMAL_PRIORITY_CLASS
+                'high': 128        // ABOVE_NORMAL_PRIORITY_CLASS
+            };
+            
+            const priorityValue = priorityMap[priority] || priorityMap['normal'];
+            
+            // Use WMIC to set priority
+            spawn('wmic', [
+                'process', 
+                'where', 
+                `ProcessId=${process.pid}`, 
+                'CALL', 
+                'setpriority', 
+                priorityValue.toString()
+            ], { detached: true, stdio: 'ignore' }).unref();
+
+        } else {
+            // Linux/Mac: Use renice command
+            const niceMap = {
+                'idle': 19,    // Lowest priority
+                'low': 10,     // Below normal
+                'normal': 0,   // Normal
+                'high': -10    // Above normal (requires sudo for negative values on some systems)
+            };
+            
+            const niceValue = niceMap[priority] || niceMap['normal'];
+            
+            // Use renice to adjust priority
+            spawn('renice', ['-n', niceValue.toString(), '-p', process.pid.toString()], 
+                { detached: true, stdio: 'ignore' }).unref();
+        }
+    } catch (error) {
+        console.warn('Failed to set process priority:', error.message);
+        // Don't throw - encoding should continue even if priority setting fails
+    }
+}
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -84,11 +138,13 @@ function createWindow() {
             const ffmpeg = spawn(FFMPEG_PATH, ['-encoders']);
             let output = '';
             ffmpeg.stdout.on('data', (data) => output += data.toString());
+            ffmpeg.stderr.on('data', (data) => output += data.toString());
             ffmpeg.on('close', () => {
+                // Check for actual encoder names (e.g. h264_nvenc) to avoid false positives
                 const encoders = {
-                    nvenc: output.includes('nvenc'),
-                    amf: output.includes('amf'),
-                    qsv: output.includes('qsv')
+                    nvenc: /h264_nvenc|hevc_nvenc/.test(output),
+                    amf: /h264_amf|hevc_amf/.test(output),
+                    qsv: /h264_qsv|hevc_qsv/.test(output)
                 };
                 resolve(encoders);
             });
@@ -110,8 +166,13 @@ function createWindow() {
                 const resMatch = output.match(/Stream #.*Video:.* (\d+x\d+)/);
                 if (resMatch) metadata.resolution = resMatch[1];
 
-                const durMatch = output.match(/Duration: (\d{2}:\d{2}:\d{2}\.\d{2})/);
-                if (durMatch) metadata.duration = durMatch[1].split('.')[0];
+                const durMatch = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
+                if (durMatch) {
+                    metadata.duration = durMatch[1] + ':' + durMatch[2] + ':' + durMatch[3] + '.' + durMatch[4];
+                    metadata.durationSeconds = parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseInt(durMatch[3]) + parseInt(durMatch[4]) / 100;
+                } else {
+                    metadata.durationSeconds = 0;
+                }
 
                 const bitMatch = output.match(/bitrate: (\d+ kb\/s)/);
                 if (bitMatch) metadata.bitrate = bitMatch[1];
@@ -121,16 +182,48 @@ function createWindow() {
         });
     });
 
+    ipcMain.handle('get-audio-waveform', async (event, filePath) => {
+        return new Promise((resolve) => {
+            const args = [
+                '-y', '-i', filePath,
+                '-filter_complex', '[0:a]aformat=channel_layouts=mono,showwavespic=s=800x60:colors=0x63f1af',
+                '-frames:v', '1', '-f', 'image2', 'pipe:1'
+            ];
+            const ffmpeg = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            const chunks = [];
+            ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
+            ffmpeg.stderr.on('data', () => {});
+            ffmpeg.on('error', () => resolve(null));
+            ffmpeg.on('close', (code) => {
+                if (code === 0 && chunks.length > 0) {
+                    resolve(Buffer.concat(chunks).toString('base64'));
+                } else {
+                    resolve(null);
+                }
+            });
+        });
+    });
+
     ipcMain.on('start-encode', (event, options) => {
         const {
             input, format, codec, preset, audioCodec, crf, audioBitrate,
             outputSuffix, fps, rateMode, bitrate, twoPass,
-            audioTracks, subtitleTracks, chaptersFile, customArgs
+            audioTracks, subtitleTracks, chaptersFile, customArgs, outputFolder,
+            resolution, workPriority
         } = options;
 
         const outputExt = format;
         const suffix = outputSuffix || '_encoded';
-        const outputPath = input.replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
+        const filename = input.split(/[\\/]/).pop().replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
+        
+        let outputPath;
+        if (outputFolder && outputFolder.trim() !== '') {
+            // Use custom output folder
+            outputPath = path.join(outputFolder, filename);
+        } else {
+            // Use same as source
+            outputPath = input.replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
+        }
 
         // Construct input arguments
         const args = ['-i', input];
@@ -210,6 +303,12 @@ function createWindow() {
         if (codec === 'copy') {
             args.push('-c:v', 'copy');
         } else {
+            // Resolution scale filter (-2 preserves aspect and ensures divisible by 2)
+            if (resolution && resolution !== 'source') {
+                const scaleHeights = { '4320p': 4320, '2160p': 2160, '1080p': 1080, '720p': 720, '480p': 480, '360p': 360 };
+                const h = scaleHeights[resolution];
+                if (h) args.push('-vf', `scale=-2:${h}`);
+            }
             const vCodecMap = {
                 'h264': 'libx264',
                 'h265': 'libx265',
@@ -285,6 +384,9 @@ function createWindow() {
         console.log('Running FFmpeg with args:', args.join(' '));
 
         currentFfmpegProcess = spawn(FFMPEG_PATH, args);
+        
+        // Set process priority based on user setting
+        setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
 
         let durationInSeconds = 0;
 
@@ -323,6 +425,101 @@ function createWindow() {
         });
     });
 
+
+    ipcMain.on('extract-audio', (event, options) => {
+        const { input, format, bitrate, workPriority } = options;
+        const extMap = { mp3: 'mp3', aac: 'm4a', flac: 'flac', wav: 'wav', ogg: 'ogg', opus: 'opus' };
+        const ext = extMap[format] || 'mp3';
+        const baseName = input.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+        const outputPath = input.replace(/\.[^.]+$/, `_audio.${ext}`);
+
+        const codecMap = {
+            mp3: ['libmp3lame', bitrate || '192k'],
+            aac: ['aac', bitrate || '192k'],
+            flac: ['flac', null],
+            wav: ['pcm_s16le', null],
+            ogg: ['libvorbis', bitrate || '192k'],
+            opus: ['libopus', bitrate || '128k']
+        };
+        const [aCodec, aBitrate] = codecMap[format] || codecMap.mp3;
+        const args = ['-y', '-i', input, '-vn', '-c:a', aCodec];
+        if (aBitrate) args.push('-b:a', aBitrate);
+        args.push(outputPath);
+
+        currentFfmpegProcess = spawn(FFMPEG_PATH, args);
+        
+        // Set process priority based on user setting
+        setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
+        
+        let durationInSeconds = 0;
+        currentFfmpegProcess.stderr.on('data', (data) => {
+            const str = data.toString();
+            if (!durationInSeconds) {
+                const durMatch = str.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.\d{2}/);
+                if (durMatch) {
+                    durationInSeconds = parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseInt(durMatch[3]);
+                }
+            }
+            const timeMatch = str.match(/time=(\d{2}):(\d{2}):(\d{2})\.\d{2}/);
+            const speedMatch = str.match(/speed=\s*(\d+\.?\d*x)/);
+            if (timeMatch && durationInSeconds) {
+                const currentTime = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseInt(timeMatch[3]);
+                const percent = Math.min(99, Math.round((currentTime / durationInSeconds) * 100));
+                event.reply('encode-progress', {
+                    percent,
+                    time: timeMatch[1] + ':' + timeMatch[2] + ':' + timeMatch[3],
+                    speed: speedMatch ? speedMatch[1] : '0.00x'
+                });
+            }
+        });
+        currentFfmpegProcess.on('close', (code) => {
+            currentFfmpegProcess = null;
+            if (code === 0) {
+                event.reply('encode-complete', { outputPath });
+            } else {
+                event.reply('encode-error', { message: `FFmpeg exited with code ${code}` });
+            }
+        });
+    });
+
+    ipcMain.on('trim-video', (event, options) => {
+        const { input, startSeconds, endSeconds, outputFolder, workPriority } = options;
+        const start = Math.max(0, startSeconds);
+        const end = Math.max(start + 1, endSeconds);
+        const baseName = input.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+        const outputPath = outputFolder && outputFolder.trim()
+            ? path.join(outputFolder, `${baseName}_trimmed.mp4`)
+            : input.replace(/\.[^.]+$/, '_trimmed.mp4');
+
+        const duration = end - start;
+        const args = ['-y', '-ss', start.toString(), '-i', input, '-t', duration.toString(), '-c', 'copy', outputPath];
+        currentFfmpegProcess = spawn(FFMPEG_PATH, args);
+        
+        // Set process priority based on user setting
+        setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
+        
+        let durationInSeconds = end - start;
+        currentFfmpegProcess.stderr.on('data', (data) => {
+            const str = data.toString();
+            const timeMatch = str.match(/time=(\d+\.?\d*)/);
+            if (timeMatch && durationInSeconds > 0) {
+                const currentTime = parseFloat(timeMatch[1]);
+                const percent = Math.min(99, Math.round((currentTime / durationInSeconds) * 100));
+                const t = Math.floor(currentTime);
+                const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+                const timeStr = [h, m, s].map(n => n.toString().padStart(2, '0')).join(':');
+                event.reply('encode-progress', { percent, time: timeStr, speed: 'N/A' });
+            }
+        });
+        currentFfmpegProcess.on('close', (code) => {
+            currentFfmpegProcess = null;
+            if (code === 0) {
+                event.reply('encode-complete', { outputPath });
+            } else {
+                event.reply('encode-error', { message: `FFmpeg exited with code ${code}` });
+            }
+        });
+    });
 
     ipcMain.on('cancel-encode', () => {
         if (currentFfmpegProcess) {

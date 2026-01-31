@@ -49,6 +49,21 @@
                             </path>
                         </svg>
                     </button>
+                    <button class="nav-item" id="nav-trim" title="Trim Video">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                    </button>
+                    <button class="nav-item" id="nav-extract-audio" title="Extract Audio">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 18V5l12-2v13"></path>
+                            <circle cx="6" cy="18" r="3"></circle>
+                            <circle cx="18" cy="16" r="3"></circle>
+                        </svg>
+                    </button>
                     <div class="sidebar-divider"></div>
                     <button class="nav-item" id="nav-queue" title="Encoding Queue">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -105,7 +120,167 @@
                             </svg>
                         </div>
                         <h2>Drop folders here</h2>
-                        <p>Batch convert entire directories</p>
+                        <p>or click to browse folders</p>
+                        <div class="supported-formats">
+                            Batch convert entire directories
+                        </div>
+                    </div>
+                </div>
+                <div id="extract-audio-drop-zone" class="drop-zone hidden">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container" style="background: linear-gradient(135deg, #3e9ae5, #2490d3);">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18V5l12-2v13"></path>
+                                <circle cx="6" cy="18" r="3"></circle>
+                                <circle cx="18" cy="16" r="3"></circle>
+                            </svg>
+                        </div>
+                        <h2>Drop video to extract audio</h2>
+                        <p>or click to browse files</p>
+                    </div>
+                </div>
+                <div id="extract-audio-dashboard" class="dashboard hidden">
+                    <button id="extract-back-btn" class="back-button" title="Go back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <div class="file-card">
+                        <div class="file-icon" id="extract-file-icon">MP4</div>
+                        <div class="file-details">
+                            <h3 id="extract-filename">video.mp4</h3>
+                            <div class="file-meta">
+                                <span id="extract-file-duration" class="meta-tag">00:00:00</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-panel">
+                        <h4 class="panel-title">Audio Output</h4>
+                        <div class="settings-grid">
+                            <div class="control-group">
+                                <label for="extract-audio-format">Format</label>
+                                <select id="extract-audio-format">
+                                    <option value="mp3">MP3</option>
+                                    <option value="aac">AAC (M4A)</option>
+                                    <option value="flac">FLAC</option>
+                                    <option value="wav">WAV</option>
+                                    <option value="ogg">OGG (Vorbis)</option>
+                                    <option value="opus">Opus</option>
+                                </select>
+                            </div>
+                            <div class="control-group" id="extract-bitrate-group">
+                                <label for="extract-audio-bitrate">Bitrate</label>
+                                <select id="extract-audio-bitrate">
+                                    <option value="128k">128 kbps</option>
+                                    <option value="192k" selected>192 kbps</option>
+                                    <option value="256k">256 kbps</option>
+                                    <option value="320k">320 kbps</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dashboard-actions">
+                        <button id="extract-add-queue-btn" class="secondary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add to Queue
+                        </button>
+                        <button id="extract-audio-btn" class="primary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18V5l12-2v13"></path>
+                                <circle cx="6" cy="18" r="3"></circle>
+                                <circle cx="18" cy="16" r="3"></circle>
+                            </svg>
+                            Extract Audio
+                        </button>
+                    </div>
+                </div>
+                <div id="trim-drop-zone" class="drop-zone hidden">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </div>
+                        <h2>Drop video to trim</h2>
+                        <p>or click to browse files</p>
+                    </div>
+                </div>
+                <div id="trim-dashboard" class="dashboard hidden">
+                    <button id="trim-back-btn" class="back-button" title="Go back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <div class="file-card">
+                        <div class="file-icon" id="trim-file-icon">MP4</div>
+                        <div class="file-details">
+                            <h3 id="trim-filename">video.mp4</h3>
+                            <div class="file-meta">
+                                <span id="trim-file-duration" class="meta-tag">00:00:00</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-panel trim-panel">
+                        <h4 class="panel-title">Trim Range</h4>
+                        <div class="trim-timeline-wrap">
+                            <div class="trim-timeline" id="trim-timeline">
+                                <div class="trim-waveform-wrap" id="trim-waveform-wrap">
+                                    <img id="trim-waveform-img" class="trim-waveform-img" alt="" />
+                                </div>
+                                <div class="trim-timeline-track" id="trim-track">
+                                    <div class="trim-timeline-inactive" id="trim-inactive-start"></div>
+                                    <div class="trim-range-handles" id="trim-range-handles">
+                                        <div class="trim-handle trim-handle-left" id="trim-handle-left" title="Drag to set start"></div>
+                                        <div class="trim-timeline-active" id="trim-active-segment"></div>
+                                        <div class="trim-handle trim-handle-right" id="trim-handle-right" title="Drag to set end"></div>
+                                    </div>
+                                    <div class="trim-timeline-inactive" id="trim-inactive-end"></div>
+                                </div>
+                            </div>
+                            <div class="trim-range-inputs">
+                                <div class="control-group">
+                                    <label for="trim-start">Start</label>
+                                    <input type="text" id="trim-start" placeholder="00:00:00.00" value="00:00:00.00">
+                                </div>
+                                <div class="control-group">
+                                    <label for="trim-end">End</label>
+                                    <input type="text" id="trim-end" placeholder="00:00:00.00" value="00:00:00.00">
+                                </div>
+                            </div>
+                            <div class="trim-info-stats" style="display: flex; justify-content: space-between; margin-top: 15px;">
+                                <div class="control-group">
+                                    <label>Trimmed Length</label>
+                                    <span id="trimmed-duration" class="trim-info-value">00:00:00</span>
+                                </div>
+                                <div class="control-group" style="text-align: right;">
+                                    <label>Est. File Size</label>
+                                    <span id="estimated-file-size" class="trim-info-value">Calculating...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dashboard-actions">
+                        <button id="trim-add-queue-btn" class="secondary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add to Queue
+                        </button>
+                        <button id="trim-video-btn" class="primary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21"></polygon>
+                            </svg>
+                            Trim Video
+                        </button>
                     </div>
                 </div>
                 <div id="file-dashboard" class="dashboard hidden">
@@ -138,20 +313,53 @@
                                     Preset: <span id="current-preset-name">Default</span>
                                 </button>
                                 <div id="preset-dropdown" class="preset-dropdown hidden">
-                                    <div class="preset-category">Built-in</div>
-                                    <div class="preset-item" data-preset="fast-1080p">Fast 1080p</div>
-                                    <div class="preset-item" data-preset="hq-1080p">High Quality 1080p</div>
-                                    <div class="preset-item" data-preset="discord">Discord / Small</div>
-                                    <div class="preset-item" data-preset="hevc-mkv">HEVC MKV (Small)</div>
-                                    <div class="preset-divider"></div>
-                                    <div class="preset-category">Custom</div>
-                                    <div id="custom-presets-list">
-                                        <div class="preset-empty">No custom presets</div>
-                                    </div>
+                                    <details class="preset-group" open>
+                                        <summary class="preset-category">Speed-Focused</summary>
+                                        <div class="preset-item" data-preset="fast-480p">Fast 480p</div>
+                                        <div class="preset-item" data-preset="fast-720p">Fast 720p</div>
+                                        <div class="preset-item" data-preset="fast-1080p">Fast 1080p</div>
+                                    </details>
+                                    
+                                    <details class="preset-group" open>
+                                        <summary class="preset-category">Quality-Focused</summary>
+                                        <div class="preset-item" data-preset="hq-720p">HQ 720p</div>
+                                        <div class="preset-item" data-preset="hq-1080p">HQ 1080p</div>
+                                        <div class="preset-item" data-preset="super-hq-1080p">Super HQ 1080p</div>
+                                    </details>
+
+                                    <details class="preset-group">
+                                        <summary class="preset-category">Content-Specific</summary>
+                                        <div class="preset-item" data-preset="anime">Anime</div>
+                                        <div class="preset-item" data-preset="film">Film</div>
+                                    </details>
+
+                                    <details class="preset-group">
+                                        <summary class="preset-category">Devices</summary>
+                                        <div class="preset-item" data-preset="iphone">iPhone</div>
+                                        <div class="preset-item" data-preset="ipad">iPad</div>
+                                        <div class="preset-item" data-preset="android">Android</div>
+                                    </details>
+
+                                    <details class="preset-group">
+                                        <summary class="preset-category">Platforms</summary>
+                                        <div class="preset-item" data-preset="streaming">Streaming</div>
+                                        <div class="preset-item" data-preset="discord">Discord</div>
+                                        <div class="preset-item" data-preset="archive">Archive</div>
+                                        <div class="preset-item" data-preset="hevc-mkv">HEVC MKV</div>
+                                    </details>
+
+                                    <details class="preset-group" open>
+                                        <summary class="preset-category">Custom</summary>
+                                        <div id="custom-presets-list">
+                                            <div class="preset-empty">No custom presets</div>
+                                        </div>
+                                    </details>
+                                    
                                     <div class="preset-divider"></div>
                                     <button id="save-preset-btn" class="preset-action-btn">Save Current as
                                         Preset...</button>
                                 </div>
+                                <button id="revert-video-btn" class="revert-btn">Reset</button>
                             </div>
                         </div>
 
@@ -162,7 +370,6 @@
                             <button class="tab-btn" data-tab="chapters">Chapters</button>
                         </div>
 
-                        <!-- Video Tab -->
                         <div class="tab-content" id="tab-video">
                             <div class="settings-grid">
                                 <div class="control-group">
@@ -182,6 +389,18 @@
                                         <option value="h265">H.265 (HEVC)</option>
                                         <option value="vp9">VP9</option>
                                         <option value="copy">Copy (No Re-encode)</option>
+                                    </select>
+                                </div>
+                                <div class="control-group">
+                                    <label for="resolution-select">Resolution</label>
+                                    <select id="resolution-select">
+                                        <option value="source">Same as source</option>
+                                        <option value="4320p">4320p (8K)</option>
+                                        <option value="2160p">2160p (4K)</option>
+                                        <option value="1080p">1080p</option>
+                                        <option value="720p">720p</option>
+                                        <option value="480p">480p</option>
+                                        <option value="360p">360p</option>
                                     </select>
                                 </div>
                                 <div class="control-group">
@@ -248,7 +467,6 @@
                             </div>
                         </div>
 
-                        <!-- Audio Tab -->
                         <div class="tab-content hidden" id="tab-audio">
                             <div class="settings-grid">
                                 <div class="control-group">
@@ -270,8 +488,7 @@
                                 </div>
                             </div>
                             <div class="track-list" id="audio-track-list">
-                                <!-- Audio tracks will be listed here -->
-                            </div>
+                                </div>
                             <button id="add-audio-btn" class="secondary-btn add-btn">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
@@ -282,11 +499,9 @@
                             </button>
                         </div>
 
-                        <!-- Subtitles Tab -->
                         <div class="tab-content hidden" id="tab-subtitles">
                             <div class="track-list" id="subtitle-track-list">
-                                <!-- Subtitle tracks will be listed here -->
-                            </div>
+                                </div>
                             <button id="add-subtitle-btn" class="secondary-btn add-btn">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
@@ -297,7 +512,6 @@
                             </button>
                         </div>
 
-                        <!-- Chapters Tab -->
                         <div class="tab-content hidden" id="tab-chapters">
                             <div id="chapter-import-zone" class="chapter-import">
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -318,7 +532,6 @@
                     </div>
 
 
-                    <!-- Advanced Section -->
                     <div class="advanced-section-toggle">
                         <button id="toggle-advanced-btn" class="text-btn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -355,7 +568,7 @@
                 </div>
                 <div id="progress-view" class="progress-view hidden">
                     <div class="progress-header">
-                        <h3>Encoding in Progress</h3>
+                        <h3 id="progress-title">Encoding in Progress</h3>
                         <p id="progress-filename">filename.mp4</p>
                     </div>
                     <div class="progress-ring-container">
@@ -397,7 +610,7 @@
                                 stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                     </div>
-                    <h2>Encoding Complete!</h2>
+                    <h2 id="complete-title">Encoding Complete!</h2>
                     <p id="output-path" class="output-path">Output saved to...</p>
                     <div class="complete-actions">
                         <button id="open-file-btn" class="action-btn">
@@ -450,8 +663,14 @@
                                 <br>
                                 <label>Output Folder</label>
                                 <div class="folder-input-group">
-                                    <input type="text" id="output-folder" readonly placeholder="Same as source">
+                                    <input type="text" id="output-folder" placeholder="Same as source">
                                     <button id="select-output-folder-btn" class="action-btn small">Browse</button>
+                                    <button id="revert-output-folder-btn" class="action-btn small icon-btn" title="Clear output folder">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                             <div class="control-group">
@@ -478,6 +697,16 @@
                                     <input type="checkbox" id="notify-on-complete" checked>
                                 </label>
                             </div>
+                            <div class="control-group">
+                                <label>Work Priority Level</label>
+                                <select id="work-priority-select">
+                                    <option value="normal">Normal</option>
+                                    <option value="high">High</option>
+                                    <option value="low">Low</option>
+                                    <option value="idle">Idle</option>
+                                </select>
+                                <p class="help-text">Controls CPU/GPU priority for encoding tasks.</p>
+                            </div>
                         </section>
 
                         <section class="settings-section">
@@ -490,12 +719,25 @@
                                     <option value="oled">Pure Black</option>
                                 </select>
                             </div>
+                            <div class="control-group">
+                                <br>
+                                <label>Accent Color</label>
+                                <select id="accent-color-select">
+                                    <option value="green">Green (Default)</option>
+                                    <option value="blue">Blue</option>
+                                    <option value="purple">Purple</option>
+                                    <option value="pink">Pink</option>
+                                    <option value="orange">Orange</option>
+                                    <option value="red">Red</option>
+                                    <option value="cyan">Cyan</option>
+                                </select>
+                            </div>
                         </section>
 
                         <section class="settings-section about-section">
                             <h4 class="panel-title">About</h4>
                             <div class="about-content">
-                                <p><strong>Video Toolbox</strong> v0.2.0</p>
+                                <p><strong>Video Toolbox</strong> v0.3.0</p>
                                 <p>a simple video converter</p>
                                 <div class="credits">
                                     <span>by fax1015</span>
@@ -540,7 +782,6 @@
                         </div>
                     </div>
                     <div id="queue-list" class="queue-list">
-                        <!-- Queue items will be injected here -->
                         <div class="empty-queue-msg">Queue is empty</div>
                     </div>
                 </div>
