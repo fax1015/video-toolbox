@@ -183,14 +183,16 @@
                     </div>
                     <div class="dashboard-actions">
                         <button id="extract-add-queue-btn" class="secondary-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
                             </svg>
                             Add to Queue
                         </button>
                         <button id="extract-audio-btn" class="primary-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
                                 <path d="M9 18V5l12-2v13"></path>
                                 <circle cx="6" cy="18" r="3"></circle>
                                 <circle cx="18" cy="16" r="3"></circle>
@@ -230,17 +232,56 @@
                     </div>
                     <div class="settings-panel trim-panel">
                         <h4 class="panel-title">Trim Range</h4>
+                        <div class="video-preview-container" id="video-preview-container">
+                            <video id="trim-video-preview" class="trim-video-preview"></video>
+                            <div class="video-overlay" id="video-overlay">
+                                <svg class="play-pause-icon" id="play-pause-icon" width="64" height="64"
+                                    viewBox="0 0 24 24" fill="white">
+                                    <polygon id="play-icon-shape" points="5,3 19,12 5,21"></polygon>
+                                    <g id="pause-icon-shape" class="hidden">
+                                        <rect x="5" y="3" width="4" height="18"></rect>
+                                        <rect x="15" y="3" width="4" height="18"></rect>
+                                    </g>
+                                </svg>
+                            </div>
+                            <div class="video-controls">
+                                <span class="video-time" id="video-current-time">00:00</span>
+                                <div class="volume-control">
+                                    <button class="mute-btn" id="trim-mute-btn" title="Mute/Unmute">
+                                        <svg id="volume-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                            <path id="volume-waves"
+                                                d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                                        </svg>
+                                        <svg id="muted-icon" class="hidden" width="20" height="20" viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" stroke-width="2">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                            <line x1="23" y1="9" x2="17" y2="15"></line>
+                                            <line x1="17" y1="9" x2="23" y2="15"></line>
+                                        </svg>
+                                    </button>
+                                    <div class="volume-slider-container">
+                                        <input type="range" class="volume-slider" id="trim-volume-slider" min="0"
+                                            max="1" step="0.05" value="1">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="trim-timeline-wrap">
                             <div class="trim-timeline" id="trim-timeline">
+                                <div class="trim-playhead" id="trim-playhead"></div>
                                 <div class="trim-waveform-wrap" id="trim-waveform-wrap">
                                     <img id="trim-waveform-img" class="trim-waveform-img" alt="" />
                                 </div>
                                 <div class="trim-timeline-track" id="trim-track">
                                     <div class="trim-timeline-inactive" id="trim-inactive-start"></div>
                                     <div class="trim-range-handles" id="trim-range-handles">
-                                        <div class="trim-handle trim-handle-left" id="trim-handle-left" title="Drag to set start"></div>
+                                        <div class="trim-handle trim-handle-left" id="trim-handle-left"
+                                            title="Drag to set start"></div>
                                         <div class="trim-timeline-active" id="trim-active-segment"></div>
-                                        <div class="trim-handle trim-handle-right" id="trim-handle-right" title="Drag to set end"></div>
+                                        <div class="trim-handle trim-handle-right" id="trim-handle-right"
+                                            title="Drag to set end"></div>
                                     </div>
                                     <div class="trim-timeline-inactive" id="trim-inactive-end"></div>
                                 </div>
@@ -255,7 +296,8 @@
                                     <input type="text" id="trim-end" placeholder="00:00:00.00" value="00:00:00.00">
                                 </div>
                             </div>
-                            <div class="trim-info-stats" style="display: flex; justify-content: space-between; margin-top: 15px;">
+                            <div class="trim-info-stats"
+                                style="display: flex; justify-content: space-between; margin-top: 15px;">
                                 <div class="control-group">
                                     <label>Trimmed Length</label>
                                     <span id="trimmed-duration" class="trim-info-value">00:00:00</span>
@@ -269,14 +311,16 @@
                     </div>
                     <div class="dashboard-actions">
                         <button id="trim-add-queue-btn" class="secondary-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
                             </svg>
                             Add to Queue
                         </button>
                         <button id="trim-video-btn" class="primary-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
                                 <polygon points="5 3 19 12 5 21"></polygon>
                             </svg>
                             Trim Video
@@ -319,7 +363,7 @@
                                         <div class="preset-item" data-preset="fast-720p">Fast 720p</div>
                                         <div class="preset-item" data-preset="fast-1080p">Fast 1080p</div>
                                     </details>
-                                    
+
                                     <details class="preset-group" open>
                                         <summary class="preset-category">Quality-Focused</summary>
                                         <div class="preset-item" data-preset="hq-720p">HQ 720p</div>
@@ -354,7 +398,7 @@
                                             <div class="preset-empty">No custom presets</div>
                                         </div>
                                     </details>
-                                    
+
                                     <div class="preset-divider"></div>
                                     <button id="save-preset-btn" class="preset-action-btn">Save Current as
                                         Preset...</button>
@@ -488,7 +532,7 @@
                                 </div>
                             </div>
                             <div class="track-list" id="audio-track-list">
-                                </div>
+                            </div>
                             <button id="add-audio-btn" class="secondary-btn add-btn">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
@@ -501,7 +545,7 @@
 
                         <div class="tab-content hidden" id="tab-subtitles">
                             <div class="track-list" id="subtitle-track-list">
-                                </div>
+                            </div>
                             <button id="add-subtitle-btn" class="secondary-btn add-btn">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
@@ -665,8 +709,10 @@
                                 <div class="folder-input-group">
                                     <input type="text" id="output-folder" placeholder="Same as source">
                                     <button id="select-output-folder-btn" class="action-btn small">Browse</button>
-                                    <button id="revert-output-folder-btn" class="action-btn small icon-btn" title="Clear output folder">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <button id="revert-output-folder-btn" class="action-btn small icon-btn"
+                                        title="Clear output folder">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
                                             <line x1="18" y1="6" x2="6" y2="18"></line>
                                             <line x1="6" y1="6" x2="18" y2="18"></line>
                                         </svg>
@@ -737,7 +783,7 @@
                         <section class="settings-section about-section">
                             <h4 class="panel-title">About</h4>
                             <div class="about-content">
-                                <p><strong>Video Toolbox</strong> v0.2.0</p>
+                                <p><strong>Video Toolbox</strong> v0.3.0</p>
                                 <p>a simple video converter</p>
                                 <div class="credits">
                                     <span>by fax1015</span>

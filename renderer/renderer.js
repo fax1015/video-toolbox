@@ -138,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const trimmedDurationEl = get('trimmed-duration');
     const estimatedFileSizeEl = get('estimated-file-size');
 
-    
+
     const APP_SETTINGS_KEY = 'video_toolbox_settings';
     let appSettings = {
         hwAccel: 'auto',
@@ -168,15 +168,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (hwAccelSelect) {
             const selected = hwAccelSelect.value;
             if (selected === 'auto') {
+                appSettings.hwAccel = 'auto';
+            } else {
+                const resolved = getAutoEncoder();
+                if (appSettings.hwAccel === 'auto' && selected === resolved) {
                     appSettings.hwAccel = 'auto';
                 } else {
-                    const resolved = getAutoEncoder();
-                    if (appSettings.hwAccel === 'auto' && selected === resolved) {
-                        appSettings.hwAccel = 'auto';
-                    } else {
-                        appSettings.hwAccel = selected;
-                    }
+                    appSettings.hwAccel = selected;
                 }
+            }
         }
         if (outputSuffixInput) appSettings.outputSuffix = outputSuffixInput.value;
         if (defaultFormatSelect) appSettings.defaultFormat = defaultFormatSelect.value;
@@ -211,18 +211,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (overwriteFilesCheckbox) overwriteFilesCheckbox.checked = appSettings.overwriteFiles;
         if (notifyOnCompleteCheckbox) notifyOnCompleteCheckbox.checked = appSettings.notifyOnComplete;
 
-        
+
         document.body.classList.remove('oled-theme', 'light-theme');
         if (appSettings.theme === 'oled') document.body.classList.add('oled-theme');
         if (appSettings.theme === 'light') document.body.classList.add('light-theme');
 
-        
+
         applyAccentColor();
 
-        
+
         updateHardwareAutoTag();
 
-        
+
         if (formatSelect && !currentEditingQueueId) {
             formatSelect.value = appSettings.defaultFormat;
         }
@@ -232,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             detectedEncoders = await electron.getEncoders();
             console.log('Detected encoders:', detectedEncoders);
-            
+
             if (appSettings.hwAccel === 'auto' && hwAccelSelect) {
                 const resolved = getAutoEncoder();
                 hwAccelSelect.value = resolved !== 'none' ? resolved : 'none';
@@ -244,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    
+
     function resetVideoDefaults() {
         if (!confirm('Revert encoding settings for this video to defaults?')) return;
 
@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audioBitrateSelect) audioBitrateSelect.value = '192k';
         if (customFfmpegArgs) customFfmpegArgs.value = '';
 
-        
+
         if (currentFilePath) {
             audioTracks = [{ isSource: true, name: 'Source Audio' }];
         } else {
@@ -323,11 +323,11 @@ document.addEventListener('DOMContentLoaded', () => {
     detectHardware();
     loadSettings();
 
-    
+
     const changeElements = [outputSuffixInput, defaultFormatSelect, themeSelectAttr, accentColorSelect, workPrioritySelect, overwriteFilesCheckbox, notifyOnCompleteCheckbox, outputFolderInput];
     if (hwAccelSelect) {
         hwAccelSelect.addEventListener('change', () => {
-            
+
             delete hwAccelSelect.dataset.auto;
             saveSettings();
         });
@@ -363,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
 
@@ -375,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    
+
     const rateModeRadios = document.querySelectorAll('input[name="rate-mode"]');
     if (rateModeRadios) {
         rateModeRadios.forEach(radio => {
@@ -387,7 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     if (addAudioBtn) {
         addAudioBtn.addEventListener('click', async () => {
             const path = await electron.selectFile();
@@ -436,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    
+
     if (addSubtitleBtn) {
         addSubtitleBtn.addEventListener('click', async () => {
             const path = await electron.selectFile();
@@ -470,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    
+
     if (chapterImportZone) {
         chapterImportZone.addEventListener('click', async () => {
             const path = await electron.selectFile();
@@ -491,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     if (!window.electron) {
         console.error('Electron bridge not found! Check preload script configuration.');
         return;
@@ -499,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const { electron } = window;
 
-    
+
     function showView(view) {
         if (!view) return;
         [dropZone, folderDropZone, extractAudioDropZone, extractAudioDashboard, trimDropZone, trimDashboard, dashboard, progressView, completeView, settingsView, queueView].forEach(v => {
@@ -522,7 +522,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (encodeSpeed) encodeSpeed.textContent = '0.00x';
     }
 
-    
+
     function resetNav() {
         if (navVideo) navVideo.classList.remove('active');
         if (navFolder) navFolder.classList.remove('active');
@@ -583,9 +583,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
 
-    
+
+
     if (dropZone) {
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -620,7 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     if (folderDropZone) {
         folderDropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -636,7 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
             folderDropZone.classList.remove('drag-over');
             const folder = e.dataTransfer.files[0];
             if (folder) {
-                
+
                 handleFolderSelection(folder.path);
             }
         });
@@ -726,9 +726,9 @@ document.addEventListener('DOMContentLoaded', () => {
             lastActiveViewId = 'extractAudioDropZone';
             const format = extractAudioFormatSelect ? extractAudioFormatSelect.value : 'mp3';
             const bitrate = (format === 'flac' || format === 'wav') ? null : (extractAudioBitrateSelect ? extractAudioBitrateSelect.value : '192k');
-            electron.extractAudio({ 
-                input: extractFilePath, 
-                format, 
+            electron.extractAudio({
+                input: extractFilePath,
+                format,
                 bitrate,
                 workPriority: appSettings.workPriority || 'normal'
             });
@@ -755,18 +755,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const trimAddQueueBtn = get('trim-add-queue-btn');
     const trimBackBtn = get('trim-back-btn');
 
+    // Video preview elements
+    const trimVideoPreview = get('trim-video-preview');
+    const videoPreviewContainer = get('video-preview-container');
+    const videoOverlay = get('video-overlay');
+    const playIconShape = get('play-icon-shape');
+    const pauseIconShape = get('pause-icon-shape');
+    const videoCurrentTime = get('video-current-time');
+    const trimMuteBtn = get('trim-mute-btn');
+    const volumeIcon = get('volume-icon');
+    const mutedIcon = get('muted-icon');
+    const trimVolumeSlider = get('trim-volume-slider');
+    const trimPlayhead = get('trim-playhead');
+
     function timeStringToSeconds(str) {
         if (!str || typeof str !== 'string') return 0;
-        
+
         // Check if there's a decimal/milliseconds part
         const [timePart, msPart] = str.trim().split('.');
         const parts = timePart.split(':').map(Number).filter(n => !isNaN(n));
-        
+
         let totalSeconds = 0;
         if (parts.length === 3) totalSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
         else if (parts.length === 2) totalSeconds = parts[0] * 60 + parts[1];
         else if (parts.length === 1) totalSeconds = parts[0];
-        
+
         // Add milliseconds/centiseconds if present
         if (msPart) {
             const cs = parseInt(msPart.padEnd(2, '0').substring(0, 2));
@@ -774,7 +787,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 totalSeconds += cs / 100;
             }
         }
-        
+
         return totalSeconds;
     }
 
@@ -789,6 +802,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return [h, m, s].map(n => n.toString().padStart(2, '0')).join(':') + '.' + centiseconds.toString().padStart(2, '0');
     }
 
+    // Simplified time display: drops hours if 0, drops milliseconds
+    function formatDisplayTime(sec) {
+        sec = Math.max(0, sec);
+        const totalSeconds = Math.floor(sec);
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        if (h > 0) {
+            return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
     function updateTrimTimelineVisual() {
         if (!trimDurationSeconds || !trimInactiveStart || !trimInactiveEnd || !trimRangeHandles) return;
         const startPct = (trimStartSeconds / trimDurationSeconds) * 100;
@@ -801,7 +827,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleTrimFileSelection(filePath) {
         trimFilePath = filePath;
-        const name = filePath.split(/[\\/]/).pop();
+        const name = filePath.split(/[\\\\/]/).pop();
         const ext = name.split('.').pop().toUpperCase();
         if (trimFilenameEl) trimFilenameEl.textContent = name;
         if (trimFileIcon) trimFileIcon.textContent = ext;
@@ -812,6 +838,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset trimmed duration and estimated file size
         if (trimmedDurationEl) trimmedDurationEl.textContent = '00:00:00';
         if (estimatedFileSizeEl) estimatedFileSizeEl.textContent = 'Calculating...';
+
+        // Set up video preview
+        if (trimVideoPreview) {
+            trimVideoPreview.src = filePath;
+            trimVideoPreview.currentTime = 0;
+        }
+        if (videoCurrentTime) videoCurrentTime.textContent = '00:00';
+        if (trimPlayhead) trimPlayhead.style.left = '0%';
+
         try {
             const metadata = await electron.getMetadata(filePath);
             trimDurationSeconds = metadata.durationSeconds || 0;
@@ -925,6 +960,30 @@ document.addEventListener('DOMContentLoaded', () => {
             trimEndSeconds = newEnd;
         }
         syncTrimInputsFromVisual();
+
+        // Auto-move video timestamp when handles are dragged
+        if (trimVideoPreview) {
+            let targetTime = -1;
+            if (trimDragging === 'start') {
+                targetTime = trimStartSeconds;
+            } else if (trimDragging === 'end') {
+                targetTime = trimEndSeconds;
+            }
+
+            if (targetTime >= 0) {
+                // Optimistic UI update
+                if (trimPlayhead && trimDurationSeconds) {
+                    const pct = (targetTime / trimDurationSeconds) * 100;
+                    trimPlayhead.style.left = pct + '%';
+                }
+                if (videoCurrentTime) {
+                    const current = formatDisplayTime(targetTime);
+                    const total = formatDisplayTime(trimDurationSeconds);
+                    videoCurrentTime.textContent = `${current} / ${total}`;
+                }
+                trimVideoPreview.currentTime = targetTime;
+            }
+        }
     }
 
     function onTrimDragEnd() {
@@ -936,6 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (trimHandleLeft) {
         trimHandleLeft.addEventListener('mousedown', (e) => {
             e.preventDefault();
+            e.stopPropagation(); // Prevent timeline seek
             if (!trimDurationSeconds) return;
             trimDragging = 'start';
             document.addEventListener('mousemove', onTrimDragMove);
@@ -945,6 +1005,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (trimHandleRight) {
         trimHandleRight.addEventListener('mousedown', (e) => {
             e.preventDefault();
+            e.stopPropagation(); // Prevent timeline seek
             if (!trimDurationSeconds) return;
             trimDragging = 'end';
             document.addEventListener('mousemove', onTrimDragMove);
@@ -954,6 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (trimActiveSegment) {
         trimActiveSegment.addEventListener('mousedown', (e) => {
             e.preventDefault();
+            e.stopPropagation(); // Prevent timeline seek
             if (!trimDurationSeconds) return;
             trimDragging = 'range';
             trimDragStartX = e.clientX;
@@ -961,6 +1023,89 @@ document.addEventListener('DOMContentLoaded', () => {
             trimDragInitialEnd = trimEndSeconds;
             document.addEventListener('mousemove', onTrimDragMove);
             document.addEventListener('mouseup', onTrimDragEnd);
+        });
+    }
+
+    // --- Playhead Dragging & Seeking ---
+    let isDraggingPlayhead = false;
+
+    function getTimelineTime(clientX) {
+        if (!trimTimeline || !trimDurationSeconds) return 0;
+        const rect = trimTimeline.getBoundingClientRect();
+        let pct = (clientX - rect.left) / rect.width;
+        pct = Math.max(0, Math.min(1, pct));
+        return pct * trimDurationSeconds;
+    }
+
+    let isPlayheadDragPending = false;
+    let lastDragClientX = 0;
+
+    function onPlayheadDragMove(e) {
+        if (!isDraggingPlayhead) return;
+        lastDragClientX = e.clientX;
+
+        if (!isPlayheadDragPending) {
+            isPlayheadDragPending = true;
+            requestAnimationFrame(() => {
+                if (!isDraggingPlayhead) {
+                    isPlayheadDragPending = false;
+                    return;
+                }
+
+                const time = getTimelineTime(lastDragClientX);
+                if (isFinite(time)) {
+                    // Optimistic UI update
+                    if (trimPlayhead && trimDurationSeconds) {
+                        const pct = (time / trimDurationSeconds) * 100;
+                        trimPlayhead.style.left = pct + '%';
+                    }
+                    if (videoCurrentTime) {
+                        const current = formatDisplayTime(time);
+                        const total = formatDisplayTime(trimDurationSeconds);
+                        videoCurrentTime.textContent = `${current} / ${total}`;
+                    }
+
+                    // Video seek
+                    trimVideoPreview.currentTime = time;
+                }
+                isPlayheadDragPending = false;
+            });
+        }
+    }
+
+    function onPlayheadDragEnd() {
+        isDraggingPlayhead = false;
+        document.removeEventListener('mousemove', onPlayheadDragMove);
+        document.removeEventListener('mouseup', onPlayheadDragEnd);
+    }
+
+    if (trimTimeline && trimPlayhead && trimVideoPreview) {
+        trimTimeline.addEventListener('mousedown', (e) => {
+            // Check if we are interacting with handles or range dragging
+            if (e.target.closest('.trim-handle') || e.target.closest('.trim-active-segment')) return;
+
+            // If clicking playhead, or inactive parts, or the timeline background (waveform)
+            e.preventDefault();
+            isDraggingPlayhead = true;
+
+            // Immediate seek to click position
+            const time = getTimelineTime(e.clientX);
+            if (isFinite(time)) {
+                // Optimistic UI update
+                if (trimPlayhead && trimDurationSeconds) {
+                    const pct = (time / trimDurationSeconds) * 100;
+                    trimPlayhead.style.left = pct + '%';
+                }
+                if (videoCurrentTime) {
+                    const current = formatDisplayTime(time);
+                    const total = formatDisplayTime(trimDurationSeconds);
+                    videoCurrentTime.textContent = `${current} / ${total}`;
+                }
+                trimVideoPreview.currentTime = time;
+            }
+
+            document.addEventListener('mousemove', onPlayheadDragMove);
+            document.addEventListener('mouseup', onPlayheadDragEnd);
         });
     }
 
@@ -1022,6 +1167,109 @@ document.addEventListener('DOMContentLoaded', () => {
                 outputFolder: outputFolderInput ? outputFolderInput.value : '',
                 workPriority: appSettings.workPriority || 'normal'
             });
+        });
+    }
+
+    // --- Video Preview Controls ---
+    let playPauseAnimTimeout = null;
+
+    function showPlayPauseAnimation(isPlaying) {
+        if (!videoOverlay || !playIconShape || !pauseIconShape) return;
+        // Show correct icon
+        playIconShape.classList.toggle('hidden', isPlaying);
+        pauseIconShape.classList.toggle('hidden', !isPlaying);
+        // Trigger animation
+        videoOverlay.classList.remove('show-icon');
+        void videoOverlay.offsetWidth; // Force reflow
+        videoOverlay.classList.add('show-icon');
+        if (playPauseAnimTimeout) clearTimeout(playPauseAnimTimeout);
+        playPauseAnimTimeout = setTimeout(() => {
+            videoOverlay.classList.remove('show-icon');
+        }, 600);
+    }
+
+    function updatePlayhead() {
+        if (!trimVideoPreview || !trimPlayhead || !trimDurationSeconds) return;
+        const pct = (trimVideoPreview.currentTime / trimDurationSeconds) * 100;
+        trimPlayhead.style.left = pct + '%';
+    }
+
+    function updateVideoTimeDisplay() {
+        if (!trimVideoPreview || !videoCurrentTime) return;
+        const current = formatDisplayTime(trimVideoPreview.currentTime);
+        const total = formatDisplayTime(trimDurationSeconds);
+        videoCurrentTime.textContent = `${current} / ${total}`;
+    }
+
+    // Click on video to play/pause
+    if (videoPreviewContainer) {
+        videoPreviewContainer.addEventListener('click', (e) => {
+            // Don't toggle if clicking on controls
+            if (e.target.closest('.video-controls')) return;
+            if (!trimVideoPreview) return;
+            if (trimVideoPreview.paused) {
+                trimVideoPreview.play();
+                showPlayPauseAnimation(true);
+            } else {
+                trimVideoPreview.pause();
+                showPlayPauseAnimation(false);
+            }
+        });
+    }
+
+    // Time update for playhead and timestamp
+    if (trimVideoPreview) {
+        trimVideoPreview.addEventListener('timeupdate', () => {
+            updatePlayhead();
+            updateVideoTimeDisplay();
+        });
+
+        trimVideoPreview.addEventListener('loadedmetadata', () => {
+            updateVideoTimeDisplay();
+        });
+
+        trimVideoPreview.addEventListener('ended', () => {
+            // Optionally reset to start of trim
+            trimVideoPreview.currentTime = trimStartSeconds;
+            updatePlayhead();
+            updateVideoTimeDisplay();
+        });
+    }
+
+    // Volume slider
+    function updateVolumeSliderBackground() {
+        if (!trimVolumeSlider) return;
+        const value = (trimVolumeSlider.value - trimVolumeSlider.min) / (trimVolumeSlider.max - trimVolumeSlider.min) * 100;
+        trimVolumeSlider.style.background = `linear-gradient(to right, var(--accent-primary) ${value}%, rgba(255, 255, 255, 0.2) ${value}%)`;
+    }
+
+    if (trimVolumeSlider && trimVideoPreview) {
+        // Init background
+        updateVolumeSliderBackground();
+
+        trimVolumeSlider.addEventListener('input', () => {
+            trimVideoPreview.volume = parseFloat(trimVolumeSlider.value);
+            if (trimVideoPreview.volume > 0 && trimVideoPreview.muted) {
+                trimVideoPreview.muted = false;
+                updateMuteIcon();
+            }
+            updateVolumeSliderBackground();
+        });
+    }
+
+    function updateMuteIcon() {
+        if (!volumeIcon || !mutedIcon || !trimVideoPreview) return;
+        const isMuted = trimVideoPreview.muted || trimVideoPreview.volume === 0;
+        volumeIcon.classList.toggle('hidden', isMuted);
+        mutedIcon.classList.toggle('hidden', !isMuted);
+    }
+
+    // Mute button
+    if (trimMuteBtn && trimVideoPreview) {
+        trimMuteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            trimVideoPreview.muted = !trimVideoPreview.muted;
+            updateMuteIcon();
         });
     }
 
@@ -1099,18 +1347,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showView(dashboard);
 
-        
+
         try {
             const metadata = await electron.getMetadata(filePath);
             if (resolutionEl) resolutionEl.textContent = metadata.resolution;
             if (durationEl) durationEl.textContent = metadata.duration;
             if (bitrateEl) bitrateEl.textContent = metadata.bitrate;
 
-            
+
             audioTracks = [{ isSource: true, name: 'Source Audio' }];
             renderAudioTracks();
 
-            
+
             if (formatSelect && !currentEditingQueueId) {
                 formatSelect.value = appSettings.defaultFormat;
             }
@@ -1247,7 +1495,7 @@ document.addEventListener('DOMContentLoaded', () => {
             encodingQueue[index].name = options.input.split(/[\\/]/).pop();
             encodingQueue[index].presetUsed = currentPresetUsed;
             encodingQueue[index].isModified = isCurrentSettingsModified;
-            
+
             if (encodingQueue[index].status === 'completed' || encodingQueue[index].status === 'error') {
                 encodingQueue[index].status = 'pending';
                 encodingQueue[index].progress = 0;
@@ -1264,16 +1512,16 @@ document.addEventListener('DOMContentLoaded', () => {
         currentEditingQueueId = id;
         currentFilePath = item.options.input;
 
-        
+
         const name = item.options.input.split(/[\\/]/).pop();
         const ext = name.split('.').pop().toUpperCase();
 
         if (filenameEl) filenameEl.textContent = name;
         if (fileIcon) fileIcon.textContent = ext;
 
-        
+
         if (formatSelect) formatSelect.value = item.options.format;
-        
+
         let baseCodec = item.options.codec;
         if (baseCodec.includes('_')) {
             baseCodec = baseCodec.split('_')[0];
@@ -1289,7 +1537,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (audioBitrateSelect) audioBitrateSelect.value = item.options.audioBitrate;
 
-        
+
         audioTracks = item.options.audioTracks ? [...item.options.audioTracks] : [];
         subtitleTracks = item.options.subtitleTracks ? [...item.options.subtitleTracks] : [];
         chaptersFile = item.options.chaptersFile || null;
@@ -1317,7 +1565,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updatePresetStatus();
 
-        
+
         try {
             const metadata = await electron.getMetadata(item.options.input);
             if (resolutionEl) resolutionEl.textContent = metadata.resolution;
@@ -1343,7 +1591,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     const BUILT_IN_PRESETS = {
         'fast-480p': { format: 'mp4', codec: 'h264', preset: 'veryfast', crf: 28, resolution: '480p', audioCodec: 'aac', audioBitrate: '96k', fps: 'source', twoPass: false },
         'fast-720p': { format: 'mp4', codec: 'h264', preset: 'veryfast', crf: 24, resolution: '720p', audioCodec: 'aac', audioBitrate: '128k', fps: 'source', twoPass: false },
@@ -1365,7 +1613,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let customPresets = {};
     let isCreatingPreset = false;
 
-    
+
     function loadCustomPresets() {
         const saved = localStorage.getItem('custom_presets');
         if (saved) {
@@ -1374,33 +1622,33 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPresetMenu();
     }
 
-    
+
     function saveCustomPreset(name, settings) {
         customPresets[name] = settings;
         localStorage.setItem('custom_presets', JSON.stringify(customPresets));
-        
-        
+
+
         if (currentPresetName) currentPresetName.textContent = name;
         applyPreset(settings, name);
-        
-        
+
+
         isCreatingPreset = false;
         renderPresetMenu();
     }
 
-    
-    function deleteCustomPreset(name) {
-        
 
-        
+    function deleteCustomPreset(name) {
+
+
+
         delete customPresets[name];
         localStorage.setItem('custom_presets', JSON.stringify(customPresets));
 
-        
+
         isCreatingPreset = false;
         renderPresetMenu();
 
-        
+
         if (presetDropdown) presetDropdown.classList.remove('hidden');
         setTimeout(() => {
             const input = document.getElementById('new-preset-input');
@@ -1410,7 +1658,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 0);
     }
 
-    
+
     function getPresetSettingsFromUI() {
         return {
             format: formatSelect ? formatSelect.value : 'mp4',
@@ -1425,14 +1673,14 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    
+
     function renderPresetMenu() {
         if (!customPresetsList) return;
 
-        
+
         const keys = Object.keys(customPresets);
-        
-        
+
+
         const formHtml = isCreatingPreset ? `
             <div id="new-preset-form" class="new-preset-form">
                 <div class="new-preset-input-wrap">
@@ -1447,7 +1695,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="preset-divider"></div>
         ` : '';
 
-        
+
         let listHtml = '';
         if (keys.length === 0) {
             listHtml = '<div class="preset-empty">No custom presets</div>';
@@ -1460,18 +1708,18 @@ document.addEventListener('DOMContentLoaded', () => {
             `).join('');
         }
 
-        
+
         customPresetsList.innerHTML = formHtml + listHtml;
 
-        
-        
-        
+
+
+
         if (isCreatingPreset) {
             const inputEl = document.getElementById('new-preset-input');
             const saveBtnEl = document.getElementById('new-preset-save');
 
             if (inputEl) {
-                
+
                 inputEl.onclick = (e) => e.stopPropagation();
                 inputEl.onmousedown = (e) => e.stopPropagation();
 
@@ -1481,14 +1729,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (e.key === 'Escape') hideNewPresetForm();
                 };
 
-                
+
                 setTimeout(() => {
                     try { inputEl.focus(); inputEl.select(); } catch (err) { /* ignore */ }
                 }, 0);
             }
 
             if (saveBtnEl) {
-                
+
                 saveBtnEl.onclick = (e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -1508,7 +1756,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        
+
         const deleteBtns = customPresetsList.querySelectorAll('.preset-remove');
         deleteBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -1519,13 +1767,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        
+
         const items = customPresetsList.querySelectorAll('.preset-item');
         items.forEach(item => {
             item.addEventListener('click', (e) => {
-                
+
                 if (e.target.closest('.preset-remove')) return;
-                
+
                 const name = item.dataset.customPreset;
                 if (customPresets[name]) {
                     applyPreset(customPresets[name], name);
@@ -1535,7 +1783,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     function showNewPresetForm() {
         isCreatingPreset = true;
         renderPresetMenu();
@@ -1546,32 +1794,32 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPresetMenu();
     }
 
-    
 
-    
+
+
     if (presetMenuBtn) {
         presetMenuBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             presetDropdown.classList.toggle('hidden');
-            
+
         });
     }
 
-    
+
     document.addEventListener('click', (e) => {
         if (!presetDropdown || presetDropdown.classList.contains('hidden')) return;
-        
-        
+
+
         if (presetDropdown.contains(e.target) || (presetMenuBtn && presetMenuBtn.contains(e.target))) {
             return;
         }
-        
-        
+
+
         presetDropdown.classList.add('hidden');
         if (isCreatingPreset) hideNewPresetForm();
     });
 
-    
+
     if (savePresetBtn) {
         savePresetBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1629,17 +1877,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    
+
     function applyPreset(settings, name) {
         console.log(`Applying preset: ${name}`, settings);
-        
+
         if (formatSelect) formatSelect.value = settings.format;
         if (codecSelect) codecSelect.value = settings.codec;
         if (presetSelect) presetSelect.value = settings.preset;
         if (resolutionSelect && settings.resolution) resolutionSelect.value = settings.resolution;
         if (fpsSelect && settings.fps) fpsSelect.value = settings.fps;
 
-        
+
         if (settings.rateMode) {
             const radio = document.querySelector(`input[name="rate-mode"][value="${settings.rateMode}"]`);
             if (radio) {
@@ -1648,10 +1896,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        
+
         if (crfSlider) {
             crfSlider.value = settings.crf || 23;
-            
+
             crfSlider.dispatchEvent(new Event('input'));
         }
 
@@ -1660,18 +1908,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (audioSelect) audioSelect.value = settings.audioCodec;
         if (audioBitrateSelect) audioBitrateSelect.value = settings.audioBitrate;
-        
+
         if (currentPresetName) currentPresetName.textContent = name;
-        
+
         // Store the original preset settings for tracking modifications
         currentPresetUsed = name;
         currentPresetOriginalSettings = { ...settings };
         isCurrentSettingsModified = false;
-        
+
         updatePresetStatus();
     }
-    
-    
+
+
     if (presetDropdown) {
         const builtIns = presetDropdown.querySelectorAll('.preset-item[data-preset]');
         builtIns.forEach(item => {
@@ -1876,9 +2124,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (encodingQueue.length === 0) return;
 
             if (isQueueRunning) {
-                
+
                 isQueueRunning = false;
-                
+
                 if (currentlyEncodingItemId !== null) {
                     const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
                     if (item && item.status === 'encoding') {
@@ -1892,7 +2140,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateQueueStatusUI();
                 updateQueueUI();
             } else {
-                
+
                 isQueueRunning = true;
                 updateQueueStatusUI();
                 processQueue();
@@ -1919,7 +2167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function processQueue() {
         if (!isQueueRunning) return;
 
-        
+
         const nextItem = encodingQueue.find(item => item.status === 'pending');
 
         if (!nextItem) {
@@ -1969,7 +2217,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isEncoding = false;
             isQueueRunning = false;
 
-            
+
             if (wasQueueRunning && currentlyEncodingItemId !== null) {
                 const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
                 if (item) {
@@ -1993,7 +2241,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     electron.onProgress((data) => {
         if (isQueueRunning && currentlyEncodingItemId !== null) {
             const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
@@ -2076,7 +2324,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    
+
     if (openFileBtn) openFileBtn.addEventListener('click', () => electron.openFile(currentOutputPath));
     if (openFolderBtn) openFolderBtn.addEventListener('click', () => electron.openFolder(currentOutputPath));
     if (newEncodeBtn) newEncodeBtn.addEventListener('click', () => {
@@ -2092,6 +2340,13 @@ document.addEventListener('DOMContentLoaded', () => {
             showView(dropZone);
         }
     });
+
+    // Global listener to blur selects on change to prevent sticky focus state
+    document.addEventListener('change', (e) => {
+        if (e.target.tagName === 'SELECT') {
+            e.target.blur();
+        }
+    });
 });
 
 
@@ -2100,7 +2355,7 @@ function renderPresets(groups) {
     container.innerHTML = groups.map((group, index) => {
         // Only add the 'open' attribute if it's one of the first two groups
         const isOpen = index < 2 ? 'open' : '';
-        
+
         return `
             <details class="preset-group" ${isOpen}>
                 <summary>${group.name}</summary>

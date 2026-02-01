@@ -39,16 +39,16 @@ function setProcessPriority(process, priority = 'normal') {
                 'normal': 32,      // NORMAL_PRIORITY_CLASS
                 'high': 128        // ABOVE_NORMAL_PRIORITY_CLASS
             };
-            
+
             const priorityValue = priorityMap[priority] || priorityMap['normal'];
-            
+
             // Use WMIC to set priority
             spawn('wmic', [
-                'process', 
-                'where', 
-                `ProcessId=${process.pid}`, 
-                'CALL', 
-                'setpriority', 
+                'process',
+                'where',
+                `ProcessId=${process.pid}`,
+                'CALL',
+                'setpriority',
                 priorityValue.toString()
             ], { detached: true, stdio: 'ignore' }).unref();
 
@@ -60,11 +60,11 @@ function setProcessPriority(process, priority = 'normal') {
                 'normal': 0,   // Normal
                 'high': -10    // Above normal (requires sudo for negative values on some systems)
             };
-            
+
             const niceValue = niceMap[priority] || niceMap['normal'];
-            
+
             // Use renice to adjust priority
-            spawn('renice', ['-n', niceValue.toString(), '-p', process.pid.toString()], 
+            spawn('renice', ['-n', niceValue.toString(), '-p', process.pid.toString()],
                 { detached: true, stdio: 'ignore' }).unref();
         }
     } catch (error) {
@@ -192,7 +192,7 @@ function createWindow() {
             const ffmpeg = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
             const chunks = [];
             ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
-            ffmpeg.stderr.on('data', () => {});
+            ffmpeg.stderr.on('data', () => { });
             ffmpeg.on('error', () => resolve(null));
             ffmpeg.on('close', (code) => {
                 if (code === 0 && chunks.length > 0) {
@@ -215,7 +215,7 @@ function createWindow() {
         const outputExt = format;
         const suffix = outputSuffix || '_encoded';
         const filename = input.split(/[\\/]/).pop().replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
-        
+
         let outputPath;
         if (outputFolder && outputFolder.trim() !== '') {
             // Use custom output folder
@@ -384,7 +384,7 @@ function createWindow() {
         console.log('Running FFmpeg with args:', args.join(' '));
 
         currentFfmpegProcess = spawn(FFMPEG_PATH, args);
-        
+
         // Set process priority based on user setting
         setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
 
@@ -447,10 +447,10 @@ function createWindow() {
         args.push(outputPath);
 
         currentFfmpegProcess = spawn(FFMPEG_PATH, args);
-        
+
         // Set process priority based on user setting
         setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
-        
+
         let durationInSeconds = 0;
         currentFfmpegProcess.stderr.on('data', (data) => {
             const str = data.toString();
@@ -494,10 +494,10 @@ function createWindow() {
         const duration = end - start;
         const args = ['-y', '-ss', start.toString(), '-i', input, '-t', duration.toString(), '-c', 'copy', outputPath];
         currentFfmpegProcess = spawn(FFMPEG_PATH, args);
-        
+
         // Set process priority based on user setting
         setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
-        
+
         let durationInSeconds = end - start;
         currentFfmpegProcess.stderr.on('data', (data) => {
             const str = data.toString();
