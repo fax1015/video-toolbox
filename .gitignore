@@ -21,3 +21,5 @@ electron-debug.log*
 .env
 .env.local
 .env.*.local
+
+stufftoadd.txt

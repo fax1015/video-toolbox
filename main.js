@@ -18,6 +18,11 @@ const os = require('os');
 const FFMPEG_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'bin', 'ffmpeg.exe')
     : path.join(__dirname, 'bin', 'ffmpeg.exe');
+
+const FFPROBE_PATH = app.isPackaged
+    ? path.join(process.resourcesPath, 'bin', 'ffprobe.exe')
+    : path.join(__dirname, 'bin', 'ffprobe.exe');
+
 let currentFfmpegProcess = null;
 
 /**
@@ -164,7 +169,18 @@ function createWindow() {
                 };
 
                 const resMatch = output.match(/Stream #.*Video:.* (\d+x\d+)/);
-                if (resMatch) metadata.resolution = resMatch[1];
+                if (resMatch) {
+                    metadata.resolution = resMatch[1];
+                    const dims = resMatch[1].split('x');
+                    metadata.width = parseInt(dims[0]);
+                    metadata.height = parseInt(dims[1]);
+                }
+
+                // FPS
+                const fpsMatch = output.match(/(\d+(?:\.\d+)?) fps/);
+                if (fpsMatch) {
+                    metadata.fps = parseFloat(fpsMatch[1]);
+                }
 
                 const durMatch = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
                 if (durMatch) {
@@ -178,6 +194,111 @@ function createWindow() {
                 if (bitMatch) metadata.bitrate = bitMatch[1];
 
                 resolve(metadata);
+            });
+        });
+    });
+
+    ipcMain.handle('get-metadata-full', async (event, filePath) => {
+        return new Promise((resolve, reject) => {
+            // Use FFPROBE_PATH for proper JSON metadata output
+            const ffprobe = spawn(FFPROBE_PATH, [
+                '-print_format', 'json',
+                '-show_format',
+                '-show_streams',
+                '-i', filePath
+            ]);
+
+            let output = '';
+            let errorOutput = '';
+
+            ffprobe.stdout.on('data', (data) => output += data.toString());
+            ffprobe.stderr.on('data', (data) => errorOutput += data.toString());
+
+            ffprobe.on('close', (code) => {
+                if (code !== 0) {
+                    console.error('ffprobe exited with code', code);
+                    console.error('ffprobe stderr:', errorOutput);
+                    resolve({ error: `ffprobe failed: ${errorOutput}` });
+                    return;
+                }
+
+                try {
+                    // Sometimes output is empty if file is invalid
+                    if (!output.trim()) {
+                        throw new Error('Empty output from ffprobe');
+                    }
+                    const data = JSON.parse(output);
+                    resolve(data);
+                } catch (e) {
+                    console.error('Error parsing ffprobe json:', e);
+                    console.error('Raw output:', output);
+                    console.error('Stderr:', errorOutput);
+                    resolve({ error: `Failed to parse metadata: ${e.message}` });
+                }
+            });
+        });
+    });
+
+    // Save metadata to file using ffmpeg
+    ipcMain.handle('save-metadata', async (event, options) => {
+        const { filePath, metadata } = options;
+
+        return new Promise((resolve, reject) => {
+            // Create a temp output file (we'll replace the original)
+            const ext = path.extname(filePath);
+            const dir = path.dirname(filePath);
+            const baseName = path.basename(filePath, ext);
+            const tempPath = path.join(dir, `${baseName}_temp${ext}`);
+
+            // Build metadata arguments
+            const metaArgs = [];
+            if (metadata.title) metaArgs.push('-metadata', `title=${metadata.title}`);
+            if (metadata.artist) metaArgs.push('-metadata', `artist=${metadata.artist}`);
+            if (metadata.album) metaArgs.push('-metadata', `album=${metadata.album}`);
+            if (metadata.year) metaArgs.push('-metadata', `date=${metadata.year}`);
+            if (metadata.genre) metaArgs.push('-metadata', `genre=${metadata.genre}`);
+            if (metadata.track) metaArgs.push('-metadata', `track=${metadata.track}`);
+            if (metadata.comment) metaArgs.push('-metadata', `comment=${metadata.comment}`);
+
+            const args = [
+                '-y',
+                '-i', filePath,
+                '-c', 'copy',  // Copy streams without re-encoding
+                ...metaArgs,
+                tempPath
+            ];
+
+            console.log('Saving metadata with args:', args);
+
+            const ffmpeg = spawn(FFMPEG_PATH, args);
+            let errorOutput = '';
+
+            ffmpeg.stderr.on('data', (data) => errorOutput += data.toString());
+
+            ffmpeg.on('close', (code) => {
+                if (code === 0) {
+                    // Replace original with temp file
+                    try {
+                        fs.unlinkSync(filePath);
+                        fs.renameSync(tempPath, filePath);
+                        resolve({ success: true });
+                    } catch (e) {
+                        console.error('Error replacing file:', e);
+                        // Try to clean up temp file
+                        try { fs.unlinkSync(tempPath); } catch (e2) { }
+                        resolve({ success: false, error: `Failed to replace file: ${e.message}` });
+                    }
+                } else {
+                    console.error('ffmpeg failed:', errorOutput);
+                    // Clean up temp file if it exists
+                    try { fs.unlinkSync(tempPath); } catch (e) { }
+                    resolve({ success: false, error: `ffmpeg failed: ${errorOutput}` });
+                }
+            });
+
+            ffmpeg.on('error', (err) => {
+                console.error('ffmpeg spawn error:', err);
+                resolve({ success: false, error: err.message });
             });
         });
     });
@@ -204,12 +325,65 @@ function createWindow() {
         });
     });
 
+    ipcMain.handle('get-video-thumbnails', async (event, options) => {
+        const { filePath, duration, count = 50 } = options;
+        if (!duration) return null;
+
+        return new Promise((resolve) => {
+            // Calculate interval to get approx 'count' frames
+            // fps = count / duration.
+            // e.g. 50 frames / 100s = 0.5 fps (1 frame every 2s)
+            // Ensure we don't exceed max texture width (approx 16000px)
+            // 160px width * 100 frames = 16000px. Safety cap at 100.
+            const safeCount = Math.min(count, 100);
+            // Ensure we generate enough frames to fill the tile, otherwise it might hang
+            const fps = (safeCount + 2) / duration;
+            const tileLayout = `${safeCount}x1`;
+
+            // Filter: scale to 240px height (maintain aspect), fps, tile
+            // scale=-1:240 sets height to 240, width auto.
+            // But for tiling we ideally want fixed width? No, tile works with variable width but fixed grid is better.
+            // Let's force width 240px for consistency.
+            const vf = `fps=${fps},scale=240:-1,tile=${tileLayout}`;
+
+            const args = [
+                '-y', '-i', filePath,
+                '-vf', vf,
+                '-frames:v', '1',
+                '-q:v', '2', // Quality (1-31, lower is better)
+                '-f', 'image2',
+                'pipe:1'
+            ];
+
+            const ffmpeg = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            const chunks = [];
+            ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
+            ffmpeg.stderr.on('data', () => { }); // Ignore stderr
+            ffmpeg.on('error', (err) => {
+                console.error('Thumb generation error:', err);
+                resolve(null);
+            });
+            ffmpeg.on('close', (code) => {
+                if (code === 0 && chunks.length > 0) {
+                    const base64 = Buffer.concat(chunks).toString('base64');
+                    resolve({
+                        data: base64,
+                        count: safeCount,
+                        interval: duration / safeCount
+                    });
+                } else {
+                    resolve(null);
+                }
+            });
+        });
+    });
+
     ipcMain.on('start-encode', (event, options) => {
         const {
             input, format, codec, preset, audioCodec, crf, audioBitrate,
             outputSuffix, fps, rateMode, bitrate, twoPass,
             audioTracks, subtitleTracks, chaptersFile, customArgs, outputFolder,
-            resolution, workPriority
+            resolution, workPriority, threads
         } = options;
 
         const outputExt = format;
@@ -360,7 +534,14 @@ function createWindow() {
             if (audioCodec === 'copy') {
                 args.push('-c:a', 'copy');
             } else {
-                const aCodecMap = { 'aac': 'aac', 'opus': 'libopus' };
+                const aCodecMap = {
+                    'aac': 'aac',
+                    'opus': 'libopus',
+                    'mp3': 'libmp3lame',
+                    'ac3': 'ac3',
+                    'flac': 'flac',
+                    'pcm_s16le': 'pcm_s16le'
+                };
                 args.push('-c:a', aCodecMap[audioCodec] || 'aac');
                 args.push('-b:a', audioBitrate);
             }
@@ -371,6 +552,11 @@ function createWindow() {
             args.push('-c:s', 'mov_text');
         } else {
             args.push('-c:s', 'copy'); // MKV handles most subs as copy
+        }
+
+        // Output Threads
+        if (threads && threads > 0) {
+            args.push('-threads', threads.toString());
         }
 
         // Advanced custom args
@@ -529,6 +715,10 @@ function createWindow() {
 
     ipcMain.on('open-file', (event, path) => shell.openPath(path));
     ipcMain.on('open-folder', (event, path) => shell.showItemInFolder(path));
+
+    ipcMain.on('open-external', (event, url) => {
+        shell.openExternal(url);
+    });
 }
 
 app.whenReady().then(createWindow);
