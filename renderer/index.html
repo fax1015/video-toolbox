@@ -29,7 +29,7 @@
             <div id="ffmpeg-status" class="status-badge"></div>
         </header>
 
-        <!-- SVG Filter for Grainy Gradients -->
+
         <svg width="0" height="0" aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden;">
             <filter id="grain" color-interpolation-filters="sRGB" x="-50%" y="-50%" width="200%" height="200%">
                 <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" />
@@ -72,6 +72,24 @@
                             <path d="M9 18V5l12-2v13"></path>
                             <circle cx="6" cy="18" r="3"></circle>
                             <circle cx="18" cy="16" r="3"></circle>
+                        </svg>
+                    </button>
+
+                    <button class="nav-item" id="nav-downloader" title="Video Downloader">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </button>
+                    <button class="nav-item" id="nav-inspector" title="Media Inspector">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            <line x1="11" y1="8" x2="11" y2="14"></line>
+                            <line x1="8" y1="11" x2="14" y2="11"></line>
                         </svg>
                     </button>
 
@@ -132,7 +150,7 @@
                 </div>
                 <div id="folder-drop-zone" class="drop-zone hidden">
                     <div class="drop-zone-inner">
-                        <div class="icon-container" style="background: linear-gradient(135deg, #a78bfa, #8b5cf6);">
+                        <div class="icon-container">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
@@ -148,7 +166,7 @@
                 </div>
                 <div id="extract-audio-drop-zone" class="drop-zone hidden">
                     <div class="drop-zone-inner">
-                        <div class="icon-container" style="background: linear-gradient(135deg, #3e9ae5, #2490d3);">
+                        <div class="icon-container">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M9 18V5l12-2v13"></path>
@@ -160,6 +178,286 @@
                         <p>or click to browse files</p>
                     </div>
                 </div>
+
+
+                <div id="downloader-dashboard" class="drop-zone hidden">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                        </div>
+                        <h2>Video/Audio Downloader</h2>
+
+                        <div class="control-group full-width"
+                            style="display: flex; flex-direction: row !important; gap: 10px; align-items: center;">
+                            <input type="text" id="dl-url" placeholder="Paste URL here..." spellcheck="false"
+                                style="flex-grow: 1; min-width: 0; margin: 0;">
+                            <button id="dl-paste-btn" class="secondary-btn" title="Paste from Clipboard"
+                                style="width: 42px; min-width: 42px; padding: 0; display: flex; align-items: center; justify-content: center; height: 42px; margin: 0;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2">
+                                    </path>
+                                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                                </svg>
+                            </button>
+                        </div>
+                        <br>
+
+                        <div class="supported-formats info-tooltip-trigger"
+                            style="display: flex; align-items: center; gap: 6px; cursor: help; position: relative; width: fit-content; margin: 0 auto;">
+                            <span>Supported platforms</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            <div class="info-tooltip">
+                                <strong>Supported Platforms:</strong><br>
+                                YouTube, Vimeo, Twitter/X, TikTok, Instagram, Facebook, Twitch, SoundCloud,
+                                Dailymotion, Reddit, and 1000+ more sites
+                            </div>
+                        </div>
+
+
+
+                    </div>
+                </div>
+
+
+                <div id="dl-options-dashboard" class="dashboard hidden">
+                    <button id="dl-back-btn" class="back-button" title="Go back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+
+                    <!-- Video Preview Card -->
+                    <div class="file-card" id="dl-preview-card">
+                        <div class="dl-thumbnail-wrapper"
+                            style="width: 120px; height: 68px; border-radius: var(--border-radius-sm); overflow: hidden; background: var(--bg-tertiary); flex-shrink: 0;">
+                            <img id="dl-thumbnail" src="" alt="Video Thumbnail"
+                                style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                            <div id="dl-thumbnail-placeholder"
+                                style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="1.5" style="color: var(--text-muted);">
+                                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                                    <line x1="7" y1="2" x2="7" y2="22"></line>
+                                    <line x1="17" y1="2" x2="17" y2="22"></line>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <line x1="2" y1="7" x2="7" y2="7"></line>
+                                    <line x1="2" y1="17" x2="7" y2="17"></line>
+                                    <line x1="17" y1="17" x2="22" y2="17"></line>
+                                    <line x1="17" y1="7" x2="22" y2="7"></line>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="file-details">
+                            <h3 id="dl-video-title" style="font-size: 0.95rem;">Loading info...</h3>
+                            <div class="file-meta">
+                                <span id="dl-video-duration" class="meta-tag">--:--</span>
+                                <span id="dl-video-channel" class="meta-tag">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="dl-settings-panel" class="settings-panel hidden">
+                        <h4 class="panel-title">Download Options</h4>
+                        <div class="settings-grid">
+                            <div class="control-group">
+                                <label>Mode</label>
+                                <select id="dl-mode">
+                                    <option value="video" selected>Video + Audio</option>
+                                    <option value="audio">Audio Only</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group" id="dl-video-quality-group">
+                                <label>Resolution</label>
+                                <select id="dl-quality">
+                                    <option value="best" selected>Best Available</option>
+                                    <option value="2160">4K (2160p)</option>
+                                    <option value="1440">2K (1440p)</option>
+                                    <option value="1080">Full HD (1080p)</option>
+                                    <option value="720">HD (720p)</option>
+                                    <option value="480">SD (480p)</option>
+                                    <option value="360">360p</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group" id="dl-video-format-group">
+                                <label>Container</label>
+                                <select id="dl-format">
+                                    <option value="mp4" selected>MP4</option>
+                                    <option value="mkv">MKV</option>
+                                    <option value="webm">WebM</option>
+                                    <option value="mov">MOV</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group" id="dl-fps-group">
+                                <label>Frame Rate Limit</label>
+                                <select id="dl-fps">
+                                    <option value="none" selected>Original</option>
+                                    <option value="60">60 FPS</option>
+                                    <option value="30">30 FPS</option>
+                                    <option value="24">24 FPS</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group hidden" id="dl-audio-format-group">
+                                <label>Audio Format</label>
+                                <select id="dl-audio-format">
+                                    <option value="mp3" selected>MP3</option>
+                                    <option value="m4a">M4A (AAC)</option>
+                                    <option value="opus">Opus</option>
+                                    <option value="vorbis">OGG (Vorbis)</option>
+                                    <option value="flac">FLAC (Lossless)</option>
+                                    <option value="wav">WAV</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group hidden" id="dl-audio-bitrate-group">
+                                <label>Audio Quality</label>
+                                <select id="dl-audio-bitrate">
+                                    <option value="320k">320 kbps (Highest)</option>
+                                    <option value="256k">256 kbps (High)</option>
+                                    <option value="192k" selected>192 kbps (Standard)</option>
+                                    <option value="128k">128 kbps (Normal)</option>
+                                    <option value="96k">96 kbps (Low)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="settings-panel hidden" id="dl-advanced-panel">
+                        <h4 class="panel-title">Post-Processing</h4>
+                        <div class="settings-grid">
+                            <div class="control-group" id="dl-video-bitrate-group">
+                                <label>Video Bitrate</label>
+                                <select id="dl-video-bitrate">
+                                    <option value="none" selected>Original</option>
+                                    <option value="50M">50 Mbps (4K High)</option>
+                                    <option value="25M">25 Mbps (4K)</option>
+                                    <option value="15M">15 Mbps (1080p High)</option>
+                                    <option value="8M">8 Mbps (1080p)</option>
+                                    <option value="5M">5 Mbps (720p)</option>
+                                    <option value="2M">2 Mbps (Low)</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group" id="dl-video-codec-group">
+                                <label>Video Codec</label>
+                                <select id="dl-video-codec">
+                                    <option value="copy" selected>Copy (No Re-encode)</option>
+                                    <option value="h264">H.264 (AVC)</option>
+                                    <option value="h265">H.265 (HEVC)</option>
+                                    <option value="vp9">VP9</option>
+                                    <option value="av1">AV1</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-actions">
+                        <button id="dl-start-btn" class="primary-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Start Download
+                        </button>
+                    </div>
+                </div>
+
+
+                <div id="dl-progress-view" class="progress-view hidden">
+                    <div class="progress-header">
+                        <h3 id="dl-progress-title">Downloading</h3>
+                        <p id="dl-status-text">Starting...</p>
+                    </div>
+                    <div class="progress-ring-container">
+                        <svg class="progress-ring" width="180" height="180">
+                            <circle class="progress-ring-bg" cx="90" cy="90" r="80" />
+                            <circle class="progress-ring-fill" id="dl-progress-ring" cx="90" cy="90" r="80" />
+                        </svg>
+                        <div class="progress-percentage" id="dl-progress-percent">0%</div>
+                    </div>
+                    <div class="progress-stats">
+                        <div class="stat">
+                            <span class="stat-label">Speed</span>
+                            <span class="stat-value" id="dl-speed">--</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Size</span>
+                            <span class="stat-value" id="dl-size">--</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">ETA</span>
+                            <span class="stat-value" id="dl-eta">--:--</span>
+                        </div>
+                    </div>
+                    <button id="dl-cancel-btn" class="cancel-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" />
+                            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" />
+                        </svg>
+                        Cancel
+                    </button>
+                </div>
+
+
+                <div id="dl-complete-view" class="complete-view hidden">
+                    <div class="success-icon">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                            <polyline points="8,12 11,15 16,9" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                    <h2>Download Complete!</h2>
+                    <p id="dl-output-path" class="output-path">Saved to...</p>
+                    <div class="complete-actions">
+                        <button id="dl-open-file-btn" class="action-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"
+                                    stroke="currentColor" stroke-width="2" />
+                                <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2" />
+                            </svg>
+                            Open File
+                        </button>
+                        <button id="dl-open-folder-btn" class="action-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                                    stroke="currentColor" stroke-width="2" />
+                            </svg>
+                            Show in Folder
+                        </button>
+                    </div>
+                    <button id="dl-new-download-btn" class="primary-btn secondary"
+                        style="margin: 16px auto 0 auto; display: flex;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        New Download
+                    </button>
+                </div>
+
                 <div id="extract-audio-dashboard" class="dashboard hidden">
                     <button id="extract-back-btn" class="back-button" title="Go back">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -223,7 +521,7 @@
                 </div>
                 <div id="trim-drop-zone" class="drop-zone hidden">
                     <div class="drop-zone-inner">
-                        <div class="icon-container" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                        <div class="icon-container">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="12" cy="12" r="10"></circle>
@@ -273,7 +571,8 @@
                                             stroke="currentColor" stroke-width="2">
                                             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                                             <path id="volume-waves"
-                                                d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                                                d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14">
+                                            </path>
                                         </svg>
                                         <svg id="muted-icon" class="hidden" width="20" height="20" viewBox="0 0 24 24"
                                             fill="none" stroke="currentColor" stroke-width="2">
@@ -383,11 +682,14 @@
                                     <div id="preset-dropdown" class="dropdown-menu preset-dropdown">
                                         <details class="preset-group" open>
                                             <summary class="preset-category">General</summary>
-                                            <div class="preset-item dropdown-item" data-preset="general-fast-480p">Fast
+                                            <div class="preset-item dropdown-item" data-preset="general-fast-480p">
+                                                Fast
                                                 480p</div>
-                                            <div class="preset-item dropdown-item" data-preset="general-fast-720p">Fast
+                                            <div class="preset-item dropdown-item" data-preset="general-fast-720p">
+                                                Fast
                                                 720p</div>
-                                            <div class="preset-item dropdown-item" data-preset="general-hq-720p">HQ 720p
+                                            <div class="preset-item dropdown-item" data-preset="general-hq-720p">HQ
+                                                720p
                                             </div>
                                             <div class="preset-item dropdown-item" data-preset="general-hq-1080p">HQ
                                                 1080p</div>
@@ -397,11 +699,14 @@
                                             <summary class="preset-category">Web</summary>
                                             <div class="preset-item dropdown-item" data-preset="web-discord-small">
                                                 Discord (Small)</div>
-                                            <div class="preset-item dropdown-item" data-preset="web-social-720p">Social
+                                            <div class="preset-item dropdown-item" data-preset="web-social-720p">
+                                                Social
                                                 Media 720p</div>
-                                            <div class="preset-item dropdown-item" data-preset="web-email-360p">Email /
+                                            <div class="preset-item dropdown-item" data-preset="web-email-360p">
+                                                Email /
                                                 Small 360p</div>
-                                            <div class="preset-item dropdown-item" data-preset="web-youtube-4k">YouTube
+                                            <div class="preset-item dropdown-item" data-preset="web-youtube-4k">
+                                                YouTube
                                                 4K</div>
                                         </details>
 
@@ -415,7 +720,8 @@
 
                                         <details class="preset-group">
                                             <summary class="preset-category">Matroska</summary>
-                                            <div class="preset-item dropdown-item" data-preset="mkv-h265-hq">H.265 MKV
+                                            <div class="preset-item dropdown-item" data-preset="mkv-h265-hq">H.265
+                                                MKV
                                                 HQ</div>
                                             <div class="preset-item dropdown-item" data-preset="mkv-h264-universal">
                                                 H.264 MKV Universal</div>
@@ -679,7 +985,7 @@
                 </div>
                 <div id="inspector-drop-zone" class="drop-zone hidden">
                     <div class="drop-zone-inner">
-                        <div class="icon-container" style="background: linear-gradient(135deg, #f472b6, #db2777);">
+                        <div class="icon-container">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="11" cy="11" r="8"></circle>
@@ -973,7 +1279,7 @@
                         <section class="settings-section about-section">
                             <h4 class="panel-title">About</h4>
                             <div class="about-content">
-                                <p><strong>Video Toolbox</strong> v0.4.0</p>
+                                <p><strong>Video Toolbox</strong> v0.4.1</p>
                                 <p>a simple video converter</p>
                                 <div class="credits">
                                     <span>by fax1015</span>
@@ -982,8 +1288,10 @@
                                 <button id="report-bug-btn" class="settings-action-btn">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71">
+                                        </path>
+                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71">
+                                        </path>
                                     </svg>
                                     Report a Bug
                                 </button>

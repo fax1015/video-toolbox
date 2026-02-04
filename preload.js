@@ -20,5 +20,11 @@ contextBridge.exposeInMainWorld('electron', {
     openFile: (filePath) => ipcRenderer.send('open-file', filePath),
     openFolder: (filePath) => ipcRenderer.send('open-folder', filePath),
     openExternal: (url) => ipcRenderer.send('open-external', url),
-    saveMetadata: (options) => ipcRenderer.invoke('save-metadata', options)
+    saveMetadata: (options) => ipcRenderer.invoke('save-metadata', options),
+    getVideoInfo: (url) => ipcRenderer.invoke('get-video-info', url),
+    downloadVideo: (options) => ipcRenderer.send('download-video', options),
+    cancelDownload: () => ipcRenderer.send('cancel-download'),
+    onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, data) => callback(data)),
+    onDownloadComplete: (callback) => ipcRenderer.on('download-complete', (event, data) => callback(data)),
+    onDownloadError: (callback) => ipcRenderer.on('download-error', (event, data) => callback(data))
 });

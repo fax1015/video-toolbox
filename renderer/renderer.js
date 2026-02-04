@@ -1,20 +1,3 @@
-/**
- * Video Toolbox - Renderer Process
- * 
- * OPTIMIZATIONS APPLIED:
- * 1. Fixed timestamp indicator snapping on mouseup (lines ~1370-1450)
- * 2. Implemented thumbnail caching system for better memory management (lines ~1185-1220)
- * 3. Added seek debouncing (16ms/~60fps) for smoother scrubbing (lines ~1193-1268)
- * 4. Optimized playhead dragging with RAF and cancellation (lines ~1370-1450)
- * 5. Improved cache clearing to help garbage collection
- * 
- * Performance improvements:
- * - ~60% reduction in video seek operations
- * - Smoother 60fps drag interactions
- * - Better memory management when switching between files
- * - Eliminated visual "snap back" when releasing playhead
- */
-
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Renderer initialized');
 
@@ -22,6 +5,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const el = document.getElementById(id);
         if (!el) console.warn(`Element with ID "${id}" not found`);
         return el;
+    };
+
+    const getLoaderHTML = (size = 40) => {
+        return `
+            <svg class="uib-loader" viewBox="0 0 40 40" height="${size}" width="${size}">
+                <circle class="track" cx="20" cy="20" r="17.5" pathlength="100" stroke-width="5px" fill="none" />
+                <circle class="car" cx="20" cy="20" r="17.5" pathlength="100" stroke-width="5px" fill="none" />
+            </svg>
+        `;
     };
 
     const dropZone = get('drop-zone');
@@ -77,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navQueue = get('nav-queue');
     const navApps = get('nav-apps');
 
-    // New Views
+
     const appsDashboard = get('apps-dashboard');
     const inspectorView = get('inspector-view');
     const inspectorDropZone = get('inspector-drop-zone');
@@ -110,6 +102,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleAdvancedBtn = get('toggle-advanced-btn');
     const advancedPanel = get('advanced-panel');
     const customFfmpegArgs = get('custom-ffmpeg-args');
+
+
+    const downloaderDashboard = get('downloader-dashboard');
+    const dlOptionsDashboard = get('dl-options-dashboard');
+    const navDownloader = get('nav-downloader');
+    const navInspector = get('nav-inspector');
+    const dlUrlInput = get('dl-url');
+    const dlPasteBtn = get('dl-paste-btn');
+    const dlContinueBtn = get('dl-continue-btn');
+    const dlBackBtn = get('dl-back-btn');
+    const dlModeSelect = get('dl-mode');
+    const dlQualitySelect = get('dl-quality');
+    const dlFormatSelect = get('dl-format');
+    const dlFpsSelect = get('dl-fps');
+    const dlVideoBitrateSelect = get('dl-video-bitrate');
+    const dlVideoCodecSelect = get('dl-video-codec');
+    const dlAudioFormatGroup = get('dl-audio-format-group');
+    const dlAudioFormatSelect = get('dl-audio-format');
+    const dlAudioBitrateGroup = get('dl-audio-bitrate-group');
+    const dlAudioBitrateSelect = get('dl-audio-bitrate');
+    const dlVideoQualityGroup = get('dl-video-quality-group');
+    const dlVideoFormatGroup = get('dl-video-format-group');
+    const dlFpsGroup = get('dl-fps-group');
+    const dlAdvancedPanel = get('dl-advanced-panel');
+    const dlSettingsPanel = get('dl-settings-panel');
+    const dlStartBtn = get('dl-start-btn');
+    const dlProgressView = get('dl-progress-view');
+    const dlProgressPercent = get('dl-progress-percent');
+    const dlProgressRing = get('dl-progress-ring');
+    const dlStatusText = get('dl-status-text');
+    const dlSpeed = get('dl-speed');
+    const dlEta = get('dl-eta');
+    const dlSize = get('dl-size');
+    const dlCancelBtn = get('dl-cancel-btn');
+    const dlCompleteView = get('dl-complete-view');
+    const dlOutputPath = get('dl-output-path');
+    const dlOpenFileBtn = get('dl-open-file-btn');
+    const dlOpenFolderBtn = get('dl-open-folder-btn');
+    const dlNewDownloadBtn = get('dl-new-download-btn');
+    const dlThumbnail = get('dl-thumbnail');
+    const dlThumbnailPlaceholder = get('dl-thumbnail-placeholder');
+    const dlVideoTitle = get('dl-video-title');
+    const dlVideoDuration = get('dl-video-duration');
+    const dlVideoChannel = get('dl-video-channel');
 
     const revertVideoBtn = get('revert-video-btn');
 
@@ -173,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const trimmedDurationEl = get('trimmed-duration');
     const estimatedFileSizeEl = get('estimated-file-size');
 
-    // --- Custom Popup Functions ---
+
     const popupOverlay = get('popup-overlay');
     const popupMessage = get('popup-message');
     const popupButtons = get('popup-buttons');
@@ -223,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Custom Dropdown Implementation ---
+    // Custom Dropdown Implementation
     function setupCustomSelects() {
         const selects = document.querySelectorAll('select:not(.replaced)');
         selects.forEach(select => {
@@ -273,7 +309,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         select.selectedIndex = index;
                         triggerText.textContent = option.textContent;
                         select.dispatchEvent(new Event('change', { bubbles: true }));
-                        select.dispatchEvent(new Event('change', { bubbles: true }));
                         container.classList.remove('open');
                         updateActiveState();
                     });
@@ -293,22 +328,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             updateMenuOptions();
 
-            // Toggle dropdown
             trigger.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (select.disabled) return;
-                // Close others
                 document.querySelectorAll('.dropdown-container.open').forEach(openContainer => {
                     if (openContainer !== container) openContainer.classList.remove('open');
                 });
-                // Close preset if open
                 const presetContainer = presetMenuBtn?.closest('.dropdown-container');
                 if (presetContainer) presetContainer.classList.remove('open');
 
                 container.classList.toggle('open');
             });
 
-            // Close on Escape
             trigger.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') container.classList.remove('open');
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -317,10 +348,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Listen for changes to original select
             select.addEventListener('change', updateActiveState);
 
-            // Re-populate if options change dynamically
             const observer = new MutationObserver(updateMenuOptions);
             observer.observe(select, { childList: true });
         });
@@ -338,10 +367,9 @@ document.addEventListener('DOMContentLoaded', () => {
         outputFolder: '',
         overwriteFiles: false,
         notifyOnComplete: true,
-        notifyOnComplete: true,
         showBlobs: true,
         cpuThreads: 0,
-        pinnedApps: ['converter', 'folder', 'trim', 'extract-audio'] // Default pinned
+        pinnedApps: ['converter', 'folder', 'trim', 'extract-audio']
     };
 
     // Tool Registry
@@ -349,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             id: 'converter',
             name: 'Video Converter',
-            description: 'Convert videos to different formats (MP4, MKV, WebM) with custom settings.',
+            description: 'Convert videos to different formats with custom settings.',
             icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line><polyline points="2 7 7 2 12 7"></polyline><polyline points="12 17 17 22 22 17"></polyline></svg>`,
             viewId: 'drop-zone',
             navId: 'nav-video',
@@ -388,12 +416,23 @@ document.addEventListener('DOMContentLoaded', () => {
             description: 'View detailed technical metadata for any media file.',
             icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>`,
             viewId: 'inspector-drop-zone',
-            navId: 'nav-inspector', // Dynamic
+            navId: 'nav-inspector',
+            action: 'view'
+        },
+        {
+            id: 'downloader',
+            name: 'Video/Audio Downloader',
+            description: 'Download videos and audio from URLs with quality selection.',
+            icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`,
+            viewId: 'downloader-dashboard',
+            navId: 'nav-downloader',
             action: 'view'
         }
     ];
 
     let detectedEncoders = { nvenc: false, amf: false, qsv: false };
+
+    let isApplyingSettings = false;
 
     function loadSettings() {
         const saved = localStorage.getItem(APP_SETTINGS_KEY);
@@ -406,6 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveSettings() {
+        if (isApplyingSettings) return;
         if (hwAccelSelect) {
             const selected = hwAccelSelect.value;
             if (selected === 'auto') {
@@ -430,8 +470,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (showBlobsCheckbox) appSettings.showBlobs = showBlobsCheckbox.checked;
         if (cpuThreadsInput) appSettings.cpuThreads = parseInt(cpuThreadsInput.value) || 0;
 
-        // Pinned apps logic handled separately or synced here if UI changes it
-        // Ensure pinnedApps exists in settings
         if (!appSettings.pinnedApps) appSettings.pinnedApps = ['converter', 'folder', 'trim', 'extract-audio'];
 
         localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(appSettings));
@@ -439,51 +477,61 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applySettings() {
-        if (hwAccelSelect) {
-            if (appSettings.hwAccel === 'auto') {
-                const resolved = getAutoEncoder();
-                hwAccelSelect.value = resolved !== 'none' ? resolved : 'none';
-                hwAccelSelect.dataset.auto = 'true';
-            } else {
-                hwAccelSelect.value = appSettings.hwAccel;
-                delete hwAccelSelect.dataset.auto;
+        isApplyingSettings = true;
+        try {
+            if (hwAccelSelect) {
+                if (appSettings.hwAccel === 'auto') {
+                    const resolved = getAutoEncoder();
+                    hwAccelSelect.value = resolved !== 'none' ? resolved : 'none';
+                    hwAccelSelect.dataset.auto = 'true';
+                } else {
+                    hwAccelSelect.value = appSettings.hwAccel;
+                    delete hwAccelSelect.dataset.auto;
+                }
             }
-        }
-        if (outputSuffixInput) outputSuffixInput.value = appSettings.outputSuffix;
-        if (defaultFormatSelect) defaultFormatSelect.value = appSettings.defaultFormat;
-        if (themeSelectAttr) themeSelectAttr.value = appSettings.theme;
-        if (accentColorSelect) accentColorSelect.value = appSettings.accentColor;
-        if (workPrioritySelect) workPrioritySelect.value = appSettings.workPriority;
-        if (outputFolderInput) outputFolderInput.value = appSettings.outputFolder;
-        if (overwriteFilesCheckbox) overwriteFilesCheckbox.checked = appSettings.overwriteFiles;
-        if (notifyOnCompleteCheckbox) notifyOnCompleteCheckbox.checked = appSettings.notifyOnComplete;
-        if (notifyOnCompleteCheckbox) notifyOnCompleteCheckbox.checked = appSettings.notifyOnComplete;
-        if (showBlobsCheckbox) showBlobsCheckbox.checked = (appSettings.showBlobs !== false);
-        if (cpuThreadsInput) cpuThreadsInput.value = appSettings.cpuThreads || 0;
+            if (outputSuffixInput) outputSuffixInput.value = appSettings.outputSuffix;
+            if (defaultFormatSelect) defaultFormatSelect.value = appSettings.defaultFormat;
+            if (themeSelectAttr) themeSelectAttr.value = appSettings.theme || 'default';
+            if (accentColorSelect) accentColorSelect.value = appSettings.accentColor;
+            if (workPrioritySelect) workPrioritySelect.value = appSettings.workPriority;
+            if (outputFolderInput) outputFolderInput.value = appSettings.outputFolder;
+            if (overwriteFilesCheckbox) overwriteFilesCheckbox.checked = appSettings.overwriteFiles;
+            if (notifyOnCompleteCheckbox) notifyOnCompleteCheckbox.checked = appSettings.notifyOnComplete;
+            if (showBlobsCheckbox) showBlobsCheckbox.checked = (appSettings.showBlobs !== false);
+            if (cpuThreadsInput) cpuThreadsInput.value = appSettings.cpuThreads || 0;
 
-        document.body.classList.toggle('no-blobs', appSettings.showBlobs === false);
+            document.body.classList.toggle('no-blobs', appSettings.showBlobs === false);
 
-        document.body.classList.remove('oled-theme', 'light-theme', 'high-contrast-theme');
-        if (appSettings.theme === 'oled') document.body.classList.add('oled-theme');
-        if (appSettings.theme === 'light') document.body.classList.add('light-theme');
-        if (appSettings.theme === 'high-contrast') document.body.classList.add('high-contrast-theme');
+            document.body.classList.remove('oled-theme', 'light-theme', 'high-contrast-theme');
+            if (appSettings.theme === 'oled') document.body.classList.add('oled-theme');
+            if (appSettings.theme === 'light') document.body.classList.add('light-theme');
+            if (appSettings.theme === 'high-contrast') document.body.classList.add('high-contrast-theme');
+
+            // Force update of custom dropdown text
+            if (themeSelectAttr) {
+                themeSelectAttr.value = appSettings.theme;
+                themeSelectAttr.dispatchEvent(new Event('change'));
+            }
+
+            if (accentColorSelect) {
+                accentColorSelect.disabled = (appSettings.theme === 'high-contrast');
+                accentColorSelect.dispatchEvent(new Event('change'));
+            }
+
+            applyAccentColor();
 
 
-        if (accentColorSelect) {
-            accentColorSelect.disabled = (appSettings.theme === 'high-contrast');
-            accentColorSelect.dispatchEvent(new Event('change'));
-        }
-
-        applyAccentColor();
+            updateHardwareAutoTag();
 
 
-        updateHardwareAutoTag();
-
-
-        if (formatSelect && !currentEditingQueueId) {
-            formatSelect.value = appSettings.defaultFormat;
+            if (formatSelect && !currentEditingQueueId) {
+                formatSelect.value = appSettings.defaultFormat;
+            }
+        } finally {
+            isApplyingSettings = false;
         }
     }
+
 
     async function detectHardware() {
         try {
@@ -563,32 +611,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyAccentColor() {
         const colors = {
-            green: { primary: '#52d698', secondary: '#51d497', glow: 'rgba(99, 241, 189, 0.05)' },
-            blue: { primary: '#60a5fa', secondary: '#3b82f6', glow: 'rgba(96, 165, 250, 0.05)' },
-            purple: { primary: '#a78bfa', secondary: '#8b5cf6', glow: 'rgba(167, 139, 250, 0.05)' },
-            pink: { primary: '#f472b6', secondary: '#ec4899', glow: 'rgba(244, 114, 182, 0.05)' },
-            orange: { primary: '#fb923c', secondary: '#f97316', glow: 'rgba(251, 146, 60, 0.05)' },
-            red: { primary: '#f87171', secondary: '#ef4444', glow: 'rgba(248, 113, 113, 0.05)' },
-            cyan: { primary: '#22d3ee', secondary: '#06b6d4', glow: 'rgba(34, 211, 238, 0.05)' }
+            green: { primary: '#52d698', secondary: '#51d497' },
+            blue: { primary: '#60a5fa', secondary: '#3b82f6' },
+            purple: { primary: '#a78bfa', secondary: '#8b5cf6' },
+            pink: { primary: '#f472b6', secondary: '#ec4899' },
+            orange: { primary: '#fb923c', secondary: '#f97316' },
+            red: { primary: '#f87171', secondary: '#ef4444' },
+            cyan: { primary: '#22d3ee', secondary: '#06b6d4' }
         };
 
-        const color = colors[appSettings.accentColor] || colors.green;
+        const colorName = appSettings.accentColor || 'green';
+        const color = colors[colorName] || colors.green;
+
+        document.body.dataset.accent = colorName;
         document.documentElement.style.setProperty('--accent-primary', color.primary);
         document.documentElement.style.setProperty('--accent-secondary', color.secondary);
-        document.documentElement.style.setProperty('--accent-glow', color.glow);
     }
 
-    // Defer non-critical initialization to idle time (Electron perf recommendation #4)
+    // Load settings immediately to prevent theme flash
+    loadSettings();
+
     if (typeof requestIdleCallback !== 'undefined') {
         requestIdleCallback(() => {
             detectHardware();
-            loadSettings();
         });
     } else {
-        // Fallback for environments without requestIdleCallback
         setTimeout(() => {
             detectHardware();
-            loadSettings();
         }, 0);
     }
 
@@ -601,7 +650,13 @@ document.addEventListener('DOMContentLoaded', () => {
             saveSettings();
         });
     }
-    changeElements.forEach(el => { if (el) el.addEventListener('change', saveSettings); });
+    changeElements.forEach(el => {
+        if (el) {
+            el.addEventListener('change', (e) => {
+                if (!isApplyingSettings) saveSettings();
+            });
+        }
+    });
 
     if (revertVideoBtn) revertVideoBtn.addEventListener('click', resetVideoDefaults);
 
@@ -812,15 +867,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showView(view) {
         if (!view) return;
-        [dropZone, folderDropZone, extractAudioDropZone, extractAudioDashboard, trimDropZone, trimDashboard, dashboard, progressView, completeView, settingsView, queueView, appsDashboard, inspectorView, inspectorDropZone].forEach(v => {
-            if (v) v.classList.add('hidden');
+
+        // Pause trim video if we are leaving the trim dashboard
+        if (typeof trimVideoPreview !== 'undefined' && trimVideoPreview && !trimVideoPreview.paused && view !== trimDashboard) {
+            trimVideoPreview.pause();
+        }
+
+        [dropZone, folderDropZone, extractAudioDropZone, extractAudioDashboard, trimDropZone, trimDashboard, dashboard, progressView, completeView, settingsView, queueView, appsDashboard, inspectorView, inspectorDropZone, downloaderDashboard, dlOptionsDashboard, dlProgressView, dlCompleteView].forEach(v => {
+            if (v) {
+                v.classList.add('hidden');
+                v.classList.remove('container-loaded');
+            }
         });
         view.classList.remove('hidden');
+        void view.offsetWidth; // Trigger reflow
+        view.classList.add('container-loaded');
     }
 
     function toggleSidebar(disabled) {
-        [navVideo, navFolder, navTrim, navExtractAudio, navSettings, navQueue, navApps].forEach(btn => {
-            if (btn) btn.classList.toggle('disabled', disabled);
+        const navItems = document.querySelectorAll('.nav-item');
+        navItems.forEach(btn => {
+            btn.classList.toggle('disabled', disabled);
         });
     }
 
@@ -958,7 +1025,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Extract Audio ---
+    // Extract Audio
     const extractFilenameEl = get('extract-filename');
     const extractFileIcon = get('extract-file-icon');
     const extractFileDuration = get('extract-file-duration');
@@ -1048,7 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Trim Video ---
+    // Trim Video
     const trimFilenameEl = get('trim-filename');
     const trimFileIcon = get('trim-file-icon');
     const trimFileDuration = get('trim-file-duration');
@@ -1166,6 +1233,11 @@ document.addEventListener('DOMContentLoaded', () => {
             trimDurationSeconds = metadata.durationSeconds || 0;
             if (trimFileDuration) trimFileDuration.textContent = metadata.duration;
             originalFileBitrate = parseFloat(metadata.bitrate) || 0; // Store bitrate in Kbps
+
+            // Correctly set aspect ratio for the container
+            if (videoPreviewContainer && metadata.width && metadata.height) {
+                videoPreviewContainer.style.aspectRatio = `${metadata.width} / ${metadata.height}`;
+            }
             trimStartSeconds = 0;
             trimEndSeconds = trimDurationSeconds;
             if (trimStartInput) trimStartInput.value = '00:00:00';
@@ -1190,7 +1262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             electron.getVideoThumbnails({
                 filePath,
                 duration: trimDurationSeconds,
-                count: 50 // Target 50 frames for cache
+                count: 150 // Target 150 frames for smoother scrubbing
             }).then(data => {
                 if (data && trimFilePath === filePath) {
                     console.log('Thumbnails loaded:', data.count, 'frames');
@@ -1277,9 +1349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let filmstripData = null;
     const scrubPreview = get('scrub-preview');
 
-    // ======================================================================
     // OPTIMIZATION: Thumbnail cache with better memory management
-    // ======================================================================
     const thumbnailCache = {
         data: null,
         filePath: null,
@@ -1310,7 +1380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Smart Seeker for Smooth Scrubbing ---
+    // Smart Seeker for Smooth Scrubbing
     const smartSeeker = {
         isSeeking: false,
         pendingTime: null,
@@ -1353,7 +1423,14 @@ document.addEventListener('DOMContentLoaded', () => {
             this.lastSeekTime = now;
             this.isSeeking = true;
             this.pendingTime = null;
-            videoElement.currentTime = time;
+
+            // OPTIMIZATION: Use fastSeek for browsing if available
+            // This prevents "pause to load" lag during scrubbing
+            if (videoElement.fastSeek) {
+                videoElement.fastSeek(time);
+            } else {
+                videoElement.currentTime = time;
+            }
         },
 
         onSeeked: function (videoElement) {
@@ -1363,16 +1440,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (this.pendingTime !== null) {
                 const t = this.pendingTime;
                 this.pendingTime = null;
-                // Use setTimeout 0 to yield to event loop, often snappier than rAF here
                 setTimeout(() => {
                     this.seek(videoElement, t);
                 }, 0);
             } else {
-                // Done seeking. 
-                // DELAY FIX: Don't hide immediately if the video isn't actually ready to show the frame?
-                // 'seeked' means the frame IS ready.
-                // But sometimes there's a slight repaint delay.
-                // We can wait a frame.
                 requestAnimationFrame(() => this.hidePreview());
             }
         },
@@ -1382,7 +1453,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.pendingTime = null;
             this.lastSeekTime = 0;
             this.hidePreview();
-            thumbnailCache.clear(); // OPTIMIZATION: Clear cache instead of filmstripData
+            thumbnailCache.clear();
             filmstripData = null;
         },
 
@@ -1398,19 +1469,26 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             if (frameIndex < 0) return;
 
-            // Updated positioning logic for `background-size: auto 100%`
-            // If bg-size is `auto 100%`, the total width is derived from image AR.
-            // background-position % works relative to the difference between container and image size.
-            // Percentage Math:
-            // x% position aligns the x% point of the image with the x% point of the container.
-            // For a sprite strip of N images:
-            // To show index i (0..N-1):
-            // pos = i / (N - 1) * 100
+            // Handle Grid Layout (Grid Sprites)
+            const cols = cachedData.cols || 1;
+            const rows = cachedData.rows || 1;
 
-            const count = cachedData.count;
-            const pos = count > 1 ? (frameIndex / (count - 1)) * 100 : 0;
+            const col = frameIndex % cols;
+            const row = Math.floor(frameIndex / cols);
 
-            scrubPreview.style.backgroundPosition = `${pos}% 0`;
+            // Calculate position percentages
+            // Formula: (col / (cols - 1)) * 100%
+            // Guard against division by zero if cols/rows == 1
+            const posX = cols > 1 ? (col / (cols - 1)) * 100 : 0;
+            const posY = rows > 1 ? (row / (rows - 1)) * 100 : 0;
+
+            scrubPreview.style.backgroundPosition = `${posX}% ${posY}%`;
+
+            // Set size to scale the grid correctly
+            // If the image contains 10x10 frames, we need the background size to be 1000% x 1000%
+            // so that one "cell" fills the container.
+            scrubPreview.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+
             scrubPreview.classList.remove('hidden');
         },
 
@@ -1418,6 +1496,67 @@ document.addEventListener('DOMContentLoaded', () => {
             if (scrubPreview) scrubPreview.classList.add('hidden');
         }
     };
+
+    // --- RAF Playback Loop for Smoothness ---
+    let playbackRafId = null;
+    let cachedTrackWidth = 0;
+
+    function updateTrackWidth() {
+        if (trimTrack) cachedTrackWidth = trimTrack.offsetWidth;
+    }
+    // Update width on resize
+    window.addEventListener('resize', () => {
+        if (!trimDashboard.classList.contains('hidden')) updateTrackWidth();
+    });
+
+    function startPlaybackLoop() {
+        if (playbackRafId) return;
+        updateTrackWidth(); // Ensure width is fresh
+
+        const loop = () => {
+            updatePlaybackUI();
+            playbackRafId = requestAnimationFrame(loop);
+        };
+        playbackRafId = requestAnimationFrame(loop);
+    }
+
+    function stopPlaybackLoop() {
+        if (playbackRafId) {
+            cancelAnimationFrame(playbackRafId);
+            playbackRafId = null;
+        }
+    }
+
+    function updatePlaybackUI() {
+        if (isDraggingPlayhead || trimDragging) return; // Don't update during any dragging
+        if (!trimVideoPreview || !trimDurationSeconds) return;
+        const time = trimVideoPreview.currentTime;
+
+        // 1. Update Playhead position using percentage
+        if (trimPlayhead) {
+            const pct = (time / trimDurationSeconds) * 100;
+            const clampedPct = Math.max(0, Math.min(100, pct));
+            trimPlayhead.style.left = clampedPct + '%';
+        }
+
+        // 2. Update Timestamp Text
+        if (videoCurrentTime) {
+            const current = formatDisplayTime(time);
+            const total = formatDisplayTime(trimDurationSeconds);
+            updateTextContent(videoCurrentTime, `${current} / ${total}`);
+        }
+    }
+
+    if (trimVideoPreview) {
+        trimVideoPreview.addEventListener('play', startPlaybackLoop);
+        trimVideoPreview.addEventListener('pause', stopPlaybackLoop);
+        trimVideoPreview.addEventListener('ended', stopPlaybackLoop);
+        // Fallback for seeking while paused
+        trimVideoPreview.addEventListener('seeked', () => {
+            if (trimVideoPreview.paused) updatePlaybackUI();
+            smartSeeker.onSeeked(trimVideoPreview);
+        });
+    }
 
     function trimTrackXToSeconds(clientX) {
         if (!trimTrack || !trimDurationSeconds) return 0;
@@ -1454,7 +1593,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         syncTrimInputsFromVisual();
 
-        // Auto-move video timestamp when handles are dragged
+        // Snap playhead to trim handles during drag
         if (trimVideoPreview) {
             let targetTime = -1;
             if (trimDragging === 'start') {
@@ -1462,24 +1601,42 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (trimDragging === 'end') {
                 targetTime = trimEndSeconds;
             }
+            // For range dragging, don't move playhead as both handles move together
 
             if (targetTime >= 0) {
-                // Optimistic UI update
-                if (trimPlayhead && trimDurationSeconds) {
-                    const pct = (targetTime / trimDurationSeconds) * 100;
+                // Update playhead position immediately using percentage
+                const pct = (targetTime / trimDurationSeconds) * 100;
+                if (trimPlayhead) {
                     trimPlayhead.style.left = pct + '%';
                 }
+
+                // Update time display
                 if (videoCurrentTime) {
                     const current = formatDisplayTime(targetTime);
                     const total = formatDisplayTime(trimDurationSeconds);
                     updateTextContent(videoCurrentTime, `${current} / ${total}`);
                 }
+
+                // Smart seek for preview
                 smartSeeker.seek(trimVideoPreview, targetTime);
             }
         }
     }
 
     function onTrimDragEnd() {
+        // Force precise seek to final position
+        if (trimVideoPreview) {
+            let targetTime = -1;
+            if (trimDragging === 'start') {
+                targetTime = trimStartSeconds;
+            } else if (trimDragging === 'end') {
+                targetTime = trimEndSeconds;
+            }
+            if (targetTime >= 0) {
+                smartSeeker.seek(trimVideoPreview, targetTime, true);
+            }
+        }
+
         trimDragging = null;
         document.removeEventListener('mousemove', onTrimDragMove);
         document.removeEventListener('mouseup', onTrimDragEnd);
@@ -1625,6 +1782,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateTextContent(videoCurrentTime, `${current} / ${total}`);
                 }
                 smartSeeker.seek(trimVideoPreview, time);
+                // Store for precise seek on mouseup
+                finalSeekOnMouseUp = e.clientX;
             }
 
             document.addEventListener('mousemove', onPlayheadDragMove);
@@ -1712,7 +1871,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updatePlayhead() {
-        if (isDraggingPlayhead || trimDragging) return;
+        if (isDraggingPlayhead || trimDragging) return; // Don't update during any dragging
         if (!trimVideoPreview || !trimPlayhead || !trimDurationSeconds) return;
         const pct = (trimVideoPreview.currentTime / trimDurationSeconds) * 100;
         trimPlayhead.style.left = pct + '%';
@@ -1996,7 +2155,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderSidebarApps() {
-        const staticNavs = ['converter', 'folder', 'trim', 'extract-audio'];
+        const staticNavs = ['converter', 'folder', 'trim', 'extract-audio', 'downloader', 'inspector'];
 
         staticNavs.forEach(id => {
             const navId = toolRegistry.find(t => t.id === id)?.navId;
@@ -2745,7 +2904,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentPresetName) currentPresetName.textContent = name;
 
-        // Store the original preset settings for tracking modifications
         currentPresetUsed = name;
         currentPresetOriginalSettings = { ...settings };
         isCurrentSettingsModified = false;
@@ -2810,7 +2968,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (itemEl) {
                     const statusEl = itemEl.querySelector('.queue-item-status');
                     const progressEl = itemEl.querySelector('.queue-progress-bar');
-                    if (statusEl) statusEl.textContent = `Encoding... ${item.progress}%`;
+                    if (statusEl) statusEl.innerHTML = `
+                        <div style="display:flex;align-items:center;gap:6px">
+                            ${getLoaderHTML(14)}
+                            Encoding... ${item.progress}%
+                        </div>
+                    `;
                     if (progressEl) progressEl.style.width = `${item.progress}%`;
                     itemEl.classList.add('active');
                     return;
@@ -2873,7 +3036,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : null;
 
             return `
-            <div class="queue-item ${item.id === currentlyEncodingItemId ? 'active' : ''} ${item.status === 'completed' ? 'completed' : ''}" 
+            <div class="queue-item container-loaded ${item.id === currentlyEncodingItemId ? 'active' : ''} ${item.status === 'completed' ? 'completed' : ''}" 
                  data-id="${item.id}" 
                  data-task-type="${item.taskType || 'encode'}"
                  onclick="window.loadQueueItem('${item.id}')">
@@ -3283,7 +3446,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             return `
-                <div class="stream-card">
+                <div class="stream-card container-loaded">
                     <div class="stream-card-header">
                         <span class="stream-type-badge ${type}">${type.toUpperCase()}</span>
                         <span class="stream-codec">${codec.toUpperCase()}</span>
@@ -3339,8 +3502,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (inspectorFilename) inspectorFilename.textContent = filename;
         if (inspectorFileIcon) inspectorFileIcon.textContent = ext;
-        if (inspectorContent) inspectorContent.textContent = 'Loading metadata...';
-        if (inspectorStreams) inspectorStreams.innerHTML = '<p style="color:var(--text-muted)">Loading...</p>';
+        if (inspectorContent) inspectorContent.innerHTML = `<div style="display:flex;align-items:center;gap:12px;color:var(--text-muted)">${getLoaderHTML(18)} Loading metadata...</div>`;
+        if (inspectorStreams) inspectorStreams.innerHTML = `<div style="display:flex;justify-content:center;padding:40px;width:100%">${getLoaderHTML(40)}</div>`;
 
         try {
             const data = await electron.getMetadataFull(filePath);
@@ -3382,9 +3545,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             inspectorSaveBtn.disabled = true;
             inspectorSaveBtn.innerHTML = `
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-                    <circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="20"></circle>
-                </svg>
+                ${getLoaderHTML(18)}
                 Saving...
             `;
 
@@ -3468,6 +3629,311 @@ document.addEventListener('DOMContentLoaded', () => {
             if (files.length > 0) {
                 loadInspectorFile(files[0].path);
             }
+        });
+    }
+
+    // --- Video Downloader Logic ---
+
+    if (navDownloader) {
+        navDownloader.addEventListener('click', () => {
+            showDownloader();
+        });
+    }
+
+    if (navInspector) {
+        navInspector.addEventListener('click', () => {
+            resetNav();
+            navInspector.classList.add('active');
+            showView(inspectorDropZone);
+        });
+    }
+
+    function showDownloader() {
+        showView(downloaderDashboard);
+
+        // Update nav state
+        document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
+        if (navDownloader) navDownloader.classList.add('active');
+
+        // Reset progress view if visible
+        if (dlProgressView) dlProgressView.classList.add('hidden');
+        if (dlStartBtn) {
+            dlStartBtn.disabled = false;
+            dlStartBtn.classList.remove('disabled');
+        }
+
+        // Hide background blobs if preferred (optional, keeping consistent with other views)
+    }
+
+    if (dlModeSelect) {
+        dlModeSelect.addEventListener('change', () => {
+            const isAudio = dlModeSelect.value === 'audio';
+
+            // Toggle Audio Groups
+            if (dlAudioFormatGroup) dlAudioFormatGroup.classList.toggle('hidden', !isAudio);
+            if (dlAudioBitrateGroup) dlAudioBitrateGroup.classList.toggle('hidden', !isAudio);
+
+            // Toggle Video Groups
+            if (dlVideoQualityGroup) dlVideoQualityGroup.classList.toggle('hidden', isAudio);
+            if (dlVideoFormatGroup) dlVideoFormatGroup.classList.toggle('hidden', isAudio);
+            if (dlFpsGroup) dlFpsGroup.classList.toggle('hidden', isAudio);
+            if (dlAdvancedPanel) {
+                const isCurrentlyHidden = dlAdvancedPanel.classList.contains('hidden');
+                dlAdvancedPanel.classList.toggle('hidden', isAudio);
+                if (isCurrentlyHidden && !isAudio) {
+                    dlAdvancedPanel.classList.remove('container-loaded');
+                    void dlAdvancedPanel.offsetWidth;
+                    dlAdvancedPanel.classList.add('container-loaded');
+                }
+            }
+        });
+    }
+
+    async function processVideoUrl(url) {
+        url = url.trim();
+        // Basic validation: must start with http/https and have some length
+        if (!url || !/^https?:\/\/.+/.test(url)) {
+            return;
+        }
+
+        // Reset preview
+        if (dlVideoTitle) dlVideoTitle.textContent = 'Loading info...';
+        if (dlVideoDuration) dlVideoDuration.textContent = '--:--';
+        if (dlVideoChannel) dlVideoChannel.textContent = '--';
+        if (dlThumbnail) dlThumbnail.style.display = 'none';
+        if (dlThumbnailPlaceholder) {
+            dlThumbnailPlaceholder.innerHTML = getLoaderHTML(32);
+            dlThumbnailPlaceholder.style.display = 'flex';
+        }
+
+        // Hide settings panel until info is loaded
+        if (dlSettingsPanel) dlSettingsPanel.classList.add('hidden');
+
+        showView(dlOptionsDashboard);
+
+        // Reset Options to Default (Video + Audio)
+        if (dlModeSelect) {
+            const videoOption = dlModeSelect.querySelector('option[value="video"]');
+            if (videoOption) {
+                videoOption.disabled = false;
+                videoOption.hidden = false;
+            }
+            dlModeSelect.value = 'video';
+            // Trigger change event to update UI
+            dlModeSelect.dispatchEvent(new Event('change'));
+        }
+
+        // Hide settings panels until info is loaded
+        if (dlSettingsPanel) dlSettingsPanel.classList.add('hidden');
+        if (dlAdvancedPanel) dlAdvancedPanel.classList.add('hidden');
+
+        // Fetch video info
+        try {
+            const info = await window.electron.getVideoInfo(url);
+            if (info && !info.error) {
+                // Show settings panel
+                // Show settings panel with bouncy animation
+                if (dlSettingsPanel) {
+                    dlSettingsPanel.classList.remove('hidden');
+                    dlSettingsPanel.classList.remove('container-loaded');
+                    void dlSettingsPanel.offsetWidth;
+                    dlSettingsPanel.classList.add('container-loaded');
+                }
+
+                if (dlVideoTitle) {
+                    dlVideoTitle.textContent = info.title;
+                    dlVideoTitle.classList.remove('text-loaded');
+                    void dlVideoTitle.offsetWidth; // Trigger reflow
+                    dlVideoTitle.classList.add('text-loaded');
+                }
+                if (dlVideoDuration) {
+                    dlVideoDuration.textContent = info.duration;
+                    dlVideoDuration.classList.remove('text-loaded');
+                    void dlVideoDuration.offsetWidth;
+                    dlVideoDuration.classList.add('text-loaded');
+                }
+                if (dlVideoChannel) {
+                    dlVideoChannel.textContent = info.channel;
+                    dlVideoChannel.classList.remove('text-loaded');
+                    void dlVideoChannel.offsetWidth;
+                    dlVideoChannel.classList.add('text-loaded');
+                }
+                if (info.thumbnail && dlThumbnail) {
+                    dlThumbnail.src = info.thumbnail;
+                    dlThumbnail.style.display = 'block';
+                    if (dlThumbnailPlaceholder) dlThumbnailPlaceholder.style.display = 'none';
+                }
+
+                // Handle Audio-Only Sources
+                if (info.isVideo === false) {
+                    if (dlModeSelect) {
+                        dlModeSelect.value = 'audio';
+                        const videoOption = dlModeSelect.querySelector('option[value="video"]');
+                        if (videoOption) {
+                            videoOption.disabled = true;
+                            videoOption.hidden = true;
+                        }
+                        dlModeSelect.dispatchEvent(new Event('change'));
+                    }
+                } else {
+                    // Show advanced panel for video with bouncy animation
+                    if (dlAdvancedPanel) {
+                        dlAdvancedPanel.classList.remove('hidden');
+                        dlAdvancedPanel.classList.remove('container-loaded');
+                        void dlAdvancedPanel.offsetWidth;
+                        dlAdvancedPanel.classList.add('container-loaded');
+                    }
+                }
+            } else {
+                if (dlVideoTitle) dlVideoTitle.textContent = 'Could not load video info';
+            }
+        } catch (err) {
+            console.error('Failed to get video info:', err);
+            if (dlVideoTitle) dlVideoTitle.textContent = 'Video URL entered';
+        }
+    }
+
+    if (dlPasteBtn) {
+        dlPasteBtn.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (dlUrlInput) dlUrlInput.value = text;
+
+                // Auto-process if URL is valid
+                if (text && text.trim()) {
+                    processVideoUrl(text);
+                }
+            } catch (err) {
+                console.error('Failed to read clipboard', err);
+            }
+        });
+    }
+
+    // Auto-process input with debounce
+    let urlInputTimer;
+    if (dlUrlInput) {
+        dlUrlInput.addEventListener('input', (e) => {
+            const url = e.target.value;
+            clearTimeout(urlInputTimer);
+
+            if (url && url.trim().length > 8) { // Minimal length check
+                urlInputTimer = setTimeout(() => {
+                    processVideoUrl(url);
+                }, 800); // Wait 800ms after typing stops
+            }
+        });
+    }
+
+    if (dlBackBtn) {
+        dlBackBtn.addEventListener('click', () => {
+            showView(downloaderDashboard);
+        });
+    }
+
+    if (dlStartBtn) {
+        dlStartBtn.addEventListener('click', () => {
+            const url = dlUrlInput.value.trim();
+            if (!url) {
+                showPopup('Please enter a valid video URL.');
+                return;
+            }
+
+            const options = {
+                url: url,
+                mode: dlModeSelect.value,
+                quality: dlQualitySelect.value,
+                format: dlFormatSelect.value,
+                fps: dlFpsSelect ? dlFpsSelect.value : 'none',
+                videoBitrate: dlVideoBitrateSelect ? dlVideoBitrateSelect.value : 'none',
+                videoCodec: dlVideoCodecSelect ? dlVideoCodecSelect.value : 'copy',
+                audioFormat: dlAudioFormatSelect.value,
+                audioBitrate: dlAudioBitrateSelect ? dlAudioBitrateSelect.value : '192k'
+            };
+
+            // Show progress view (separate page)
+            showView(dlProgressView);
+            toggleSidebar(true);
+
+            // Reset progress UI
+            if (dlProgressRing) dlProgressRing.style.strokeDashoffset = 502;
+            if (dlProgressPercent) dlProgressPercent.textContent = '0%';
+            if (dlStatusText) dlStatusText.textContent = 'Starting download...';
+            if (dlSpeed) dlSpeed.textContent = '--';
+            if (dlEta) dlEta.textContent = '--:--';
+            if (dlSize) dlSize.textContent = '--';
+
+            window.electron.downloadVideo(options);
+        });
+    }
+
+    // Store current download path for complete view
+    let currentDlOutputPath = '';
+
+    if (dlCancelBtn) {
+        dlCancelBtn.addEventListener('click', () => {
+            window.electron.cancelDownload();
+            showView(downloaderDashboard);
+            toggleSidebar(false);
+            showPopup('Download cancelled.');
+        });
+    }
+
+    window.electron.onDownloadProgress((data) => {
+        // data: { percent, speed, eta, size, status }
+        if (data.percent) {
+            const percent = parseFloat(data.percent);
+            // Update ring: 502 is circumference for r=80
+            const offset = 502 - (502 * percent / 100);
+            if (dlProgressRing) dlProgressRing.style.strokeDashoffset = offset;
+            if (dlProgressPercent) dlProgressPercent.textContent = `${Math.round(percent)}%`;
+        }
+        if (data.speed && dlSpeed) dlSpeed.textContent = data.speed;
+        if (data.eta && dlEta) dlEta.textContent = data.eta;
+        if (data.size && dlSize) dlSize.textContent = data.size;
+        if (data.status && dlStatusText) dlStatusText.textContent = data.status;
+    });
+
+    window.electron.onDownloadComplete((message) => {
+        currentDlOutputPath = message.outputPath || '';
+
+        // Update complete view
+        if (dlOutputPath) dlOutputPath.textContent = currentDlOutputPath || 'Output folder';
+
+        // Show complete view
+        showView(dlCompleteView);
+        toggleSidebar(false);
+
+        // Clear URL for next download
+        if (dlUrlInput) dlUrlInput.value = '';
+    });
+
+    window.electron.onDownloadError((error) => {
+        showPopup(`Download Error: ${error.message}`);
+        showView(downloaderDashboard);
+        toggleSidebar(false);
+    });
+
+    // Complete view button handlers
+    if (dlOpenFileBtn) {
+        dlOpenFileBtn.addEventListener('click', () => {
+            if (currentDlOutputPath) {
+                window.electron.openFile(currentDlOutputPath);
+            }
+        });
+    }
+
+    if (dlOpenFolderBtn) {
+        dlOpenFolderBtn.addEventListener('click', () => {
+            if (currentDlOutputPath) {
+                window.electron.openFolder(currentDlOutputPath);
+            }
+        });
+    }
+
+    if (dlNewDownloadBtn) {
+        dlNewDownloadBtn.addEventListener('click', () => {
+            showView(downloaderDashboard);
+            currentDlOutputPath = '';
         });
     }
 

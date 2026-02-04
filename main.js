@@ -6,8 +6,10 @@ if (process.platform === 'win32') {
     app.setAppUserModelId('com.fax1015.videotoolbox');
 }
 
-// Remove the default menu
 Menu.setApplicationMenu(null);
+
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 
 const path = require('path');
@@ -34,7 +36,6 @@ let isCancelling = false;
 function setProcessPriority(process, priority = 'normal') {
     if (!process || !process.pid) return;
 
-    // Lazy-load os module only when needed (Electron perf recommendation #2)
     const os = require('os');
 
     try {
@@ -96,7 +97,8 @@ function createWindow() {
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
+            backgroundThrottling: false
         },
         ...(process.platform !== 'darwin' ? {
             titleBarOverlay: {
@@ -113,7 +115,6 @@ function createWindow() {
 
     win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-    // IPC Handlers
     ipcMain.handle('select-file', async () => {
         const { canceled, filePaths } = await dialog.showOpenDialog({
             properties: ['openFile'],
@@ -243,7 +244,6 @@ function createWindow() {
         });
     });
 
-    // Save metadata to file using ffmpeg
     ipcMain.handle('save-metadata', async (event, options) => {
         const { filePath, metadata } = options;
 
@@ -334,32 +334,36 @@ function createWindow() {
         if (!duration) return null;
 
         return new Promise((resolve) => {
-            // Calculate interval to get approx 'count' frames
-            // fps = count / duration.
-            // e.g. 50 frames / 100s = 0.5 fps (1 frame every 2s)
-            // Ensure we don't exceed max texture width (approx 16000px)
-            // 160px width * 100 frames = 16000px. Safety cap at 100.
-            const safeCount = Math.min(count, 100);
-            // Ensure we generate enough frames to fill the tile, otherwise it might hang
+            // Target roughly 240px height for quality (approx 240x135 for 16:9)
+            // Use Grid Layout to avoid texture width limits (~16384px)
+            const safeCount = Math.min(count, 300);
             const fps = (safeCount + 2) / duration;
-            const tileLayout = `${safeCount}x1`;
 
-            // Filter: scale to 240px height (maintain aspect), fps, tile
-            // scale=-1:240 sets height to 240, width auto.
-            // But for tiling we ideally want fixed width? No, tile works with variable width but fixed grid is better.
-            // Let's force width 240px for consistency.
-            const vf = `fps=${fps},scale=240:-1,tile=${tileLayout}`;
+            // Grid Layout: 10 columns wide
+            const cols = 10;
+            // Rows proportional to count
+            const rows = Math.ceil(safeCount / cols);
+
+            // "tile=10x30" -> 10 columns, 30 rows
+            const tileLayout = `${cols}x${rows}`;
+
+            // Scale to 240px height, keep aspect ratio
+            const vf = `fps=${fps},scale=-1:240,tile=${tileLayout}`;
 
             const args = [
                 '-y', '-i', filePath,
                 '-vf', vf,
                 '-frames:v', '1',
-                '-q:v', '2', // Quality (1-31, lower is better)
+                '-q:v', '2', // High Quality (2-5 is good range, 2 is very high)
                 '-f', 'image2',
                 'pipe:1'
             ];
 
             const ffmpeg = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+            // Enforce IDLE priority for background generation
+            setProcessPriority(ffmpeg, 'idle');
+
             const chunks = [];
             ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
             ffmpeg.stderr.on('data', () => { }); // Ignore stderr
@@ -369,10 +373,11 @@ function createWindow() {
             });
             ffmpeg.on('close', (code) => {
                 if (code === 0 && chunks.length > 0) {
-                    const base64 = Buffer.concat(chunks).toString('base64');
                     resolve({
-                        data: base64,
+                        data: Buffer.concat(chunks).toString('base64'),
                         count: safeCount,
+                        cols: cols,
+                        rows: rows, // Return grid dimensions for frontend
                         interval: duration / safeCount
                     });
                 } else {
@@ -403,7 +408,6 @@ function createWindow() {
             outputPath = input.replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
         }
 
-        // Construct input arguments
         const args = ['-i', input];
         let inputCount = 1;
 
@@ -441,8 +445,6 @@ function createWindow() {
 
         args.push('-y'); // Overwrite
 
-        // Mapping logic
-        // Map original video (Input 0, Video 0)
         args.push('-map', '0:v:0');
 
         // Map audio
@@ -477,7 +479,6 @@ function createWindow() {
             args.push('-map_metadata', `${chaptersInputIdx}`);
         }
 
-        // Video settings
         if (codec === 'copy') {
             args.push('-c:v', 'copy');
         } else {
@@ -533,7 +534,6 @@ function createWindow() {
             }
         }
 
-        // Audio codec
         if (audioCodec !== 'none') {
             if (audioCodec === 'copy') {
                 args.push('-c:a', 'copy');
@@ -575,7 +575,7 @@ function createWindow() {
 
         currentFfmpegProcess = spawn(FFMPEG_PATH, args);
 
-        // Set process priority based on user setting
+
         setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
 
         currentOutputPath = outputPath;
@@ -645,7 +645,7 @@ function createWindow() {
 
         currentFfmpegProcess = spawn(FFMPEG_PATH, args);
 
-        // Set process priority based on user setting
+
         setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
 
         currentOutputPath = outputPath;
@@ -699,7 +699,7 @@ function createWindow() {
         const args = ['-y', '-ss', start.toString(), '-i', input, '-t', duration.toString(), '-c', 'copy', outputPath];
         currentFfmpegProcess = spawn(FFMPEG_PATH, args);
 
-        // Set process priority based on user setting
+
         setProcessPriority(currentFfmpegProcess, workPriority || 'normal');
 
         currentOutputPath = outputPath;
@@ -762,6 +762,247 @@ function createWindow() {
 
     ipcMain.on('open-external', (event, url) => {
         shell.openExternal(url);
+    });
+
+    // Get video info (title, thumbnail, duration) using yt-dlp
+    ipcMain.handle('get-video-info', async (event, url) => {
+        const YT_DLP_PATH = app.isPackaged
+            ? path.join(process.resourcesPath, 'bin', 'yt-dlp.exe')
+            : path.join(__dirname, 'bin', 'yt-dlp.exe');
+
+        const fs = require('fs');
+        if (!fs.existsSync(YT_DLP_PATH)) {
+            return { error: 'yt-dlp not found' };
+        }
+
+        return new Promise((resolve) => {
+            const args = [
+                '--dump-json',
+                '--no-download',
+                '--no-warnings',
+                url
+            ];
+
+            const proc = spawn(YT_DLP_PATH, args);
+            let stdout = '';
+            let stderr = '';
+
+            proc.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+
+            proc.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            proc.on('close', (code) => {
+                if (code === 0 && stdout) {
+                    try {
+                        const info = JSON.parse(stdout);
+                        resolve({
+                            title: info.title || 'Unknown Title',
+                            thumbnail: info.thumbnail || null,
+                            duration: info.duration ? formatDuration(info.duration) : '--:--',
+                            channel: info.uploader || info.channel || 'Unknown',
+                            isVideo: info.vcodec !== 'none',
+                            url: url
+                        });
+                    } catch (e) {
+                        resolve({ error: 'Failed to parse video info' });
+                    }
+                } else {
+                    resolve({ error: stderr || 'Failed to get video info' });
+                }
+            });
+        });
+    });
+
+    function formatDuration(seconds) {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        if (hrs > 0) {
+            return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    ipcMain.on('download-video', async (event, options) => {
+        const { url, mode, quality, format, audioFormat, audioBitrate, fps, videoBitrate, videoCodec } = options;
+
+        // Path to yt-dlp executable
+        const YT_DLP_PATH = app.isPackaged
+            ? path.join(process.resourcesPath, 'bin', 'yt-dlp.exe')
+            : path.join(__dirname, 'bin', 'yt-dlp.exe');
+
+        // Use default output folder or Downloads
+        const outputFolder = global.userSettings?.outputFolder || app.getPath('downloads');
+
+        // Ensure yt-dlp exists
+        const fs = require('fs');
+        if (!fs.existsSync(YT_DLP_PATH)) {
+            event.reply('download-error', { message: 'yt-dlp.exe not found in bin folder.' });
+            return;
+        }
+
+        const args = [];
+
+        // Output template
+        const outputTemplate = path.join(outputFolder, '%(title)s.%(ext)s');
+        args.push('-o', outputTemplate);
+
+        // Format selection
+        if (mode === 'audio') {
+            args.push('-x', '--audio-format', audioFormat || 'mp3');
+            if (audioBitrate) {
+                args.push('--audio-quality', audioBitrate);
+            }
+        } else {
+            // Video + Audio
+            if (format === 'mp4') {
+                args.push('--merge-output-format', 'mp4');
+            } else if (format === 'mkv') {
+                args.push('--merge-output-format', 'mkv');
+            } else if (format === 'mov') {
+                args.push('--merge-output-format', 'mov');
+            } else if (format === 'webm') {
+                args.push('--merge-output-format', 'webm');
+            }
+
+            // Quality selection
+            if (quality === 'best') {
+                args.push('-f', 'bestvideo+bestaudio/best');
+            } else {
+                // e.g. height <= 1080
+                args.push('-f', `bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]/best`);
+            }
+
+            // Post-processing with FFmpeg (if any option is not default)
+            const needsReencode = (fps && fps !== 'none') || (videoBitrate && videoBitrate !== 'none') || (videoCodec && videoCodec !== 'copy');
+
+            if (needsReencode) {
+                const ffmpegArgs = [];
+
+                // Video codec
+                if (videoCodec && videoCodec !== 'copy') {
+                    if (videoCodec === 'h264') {
+                        ffmpegArgs.push('-c:v', 'libx264');
+                    } else if (videoCodec === 'h265') {
+                        ffmpegArgs.push('-c:v', 'libx265');
+                    } else if (videoCodec === 'vp9') {
+                        ffmpegArgs.push('-c:v', 'libvpx-vp9');
+                    } else if (videoCodec === 'av1') {
+                        ffmpegArgs.push('-c:v', 'libaom-av1');
+                    }
+                } else {
+                    ffmpegArgs.push('-c:v', 'copy');
+                }
+
+                // Video bitrate
+                if (videoBitrate && videoBitrate !== 'none') {
+                    ffmpegArgs.push('-b:v', videoBitrate);
+                }
+
+                // FPS limit
+                if (fps && fps !== 'none') {
+                    ffmpegArgs.push('-r', fps);
+                }
+
+                // Audio copy
+                ffmpegArgs.push('-c:a', 'copy');
+
+                if (ffmpegArgs.length > 0) {
+                    args.push('--postprocessor-args', `ffmpeg:${ffmpegArgs.join(' ')}`);
+                }
+            }
+        }
+
+        args.push('--progress');
+        args.push('--newline'); // Important for parsing status
+        args.push(url);
+
+        console.log('Running yt-dlp:', args.join(' '));
+
+        const process = spawn(YT_DLP_PATH, args);
+        let currentDownloadPath = null;
+
+        process.stdout.on('data', (data) => {
+            const str = data.toString();
+            // console.log('yt-dlp stdout:', str);
+
+            // Parse progress
+            const progressMatch = str.match(/\[download\]\s+(\d+\.?\d*)%/);
+            const sizeMatch = str.match(/of\s+(\d+\.?\d*[KMG]iB)/);
+            const speedMatch = str.match(/at\s+(\d+\.?\d*[KMG]iB\/s)/);
+            const etaMatch = str.match(/ETA\s+(\d{2}:\d{2})/);
+
+            const destMatch = str.match(/Destination:\s+(.*)/) || str.match(/Already downloaded:\s+(.*)/);
+            if (destMatch) {
+                currentDownloadPath = destMatch[1];
+            }
+
+            if (str.includes('[Merger]')) {
+                event.reply('download-progress', { status: 'Merging formats...' });
+            }
+            if (str.includes('[ExtractAudio]')) {
+                event.reply('download-progress', { status: 'Extracting audio...' });
+            }
+
+            if (progressMatch) {
+                event.reply('download-progress', {
+                    percent: parseFloat(progressMatch[1]),
+                    size: sizeMatch ? sizeMatch[1] : null,
+                    speed: speedMatch ? speedMatch[1] : null,
+                    eta: etaMatch ? etaMatch[1] : null,
+                    status: 'Downloading...'
+                });
+            }
+        });
+
+        process.stderr.on('data', (data) => {
+            // console.error('yt-dlp stderr:', data.toString());
+        });
+
+        let isCancelled = false;
+
+        const cancelHandler = () => {
+            isCancelled = true;
+            process.kill();
+        };
+
+        ipcMain.on('cancel-download', cancelHandler);
+
+        process.on('close', (code) => {
+            ipcMain.removeListener('cancel-download', cancelHandler);
+
+            if (isCancelled) {
+                // Cleanup with delay
+                setTimeout(() => {
+                    try {
+                        if (currentDownloadPath) {
+                            const potentialFiles = [
+                                currentDownloadPath,
+                                currentDownloadPath + '.part',
+                                currentDownloadPath + '.ytdl'
+                            ];
+
+                            potentialFiles.forEach(file => {
+                                if (fs.existsSync(file)) {
+                                    try { fs.unlinkSync(file); } catch (e) { /* ignore */ }
+                                }
+                            });
+                        }
+                    } catch (e) { console.error(e); }
+                }, 1000);
+                return;
+            }
+
+            if (code === 0) {
+                event.reply('download-complete', { outputPath: currentDownloadPath || outputFolder });
+            } else {
+                event.reply('download-error', { message: `yt-dlp exited with code ${code}` });
+            }
+        });
     });
 }
 
