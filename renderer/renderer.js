@@ -153,11 +153,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const dlFormatsActions = get('dl-formats-actions');
 
     let currentVideoInfo = null;
-    let currentDownloadUrl = ''; // NEW: Persist URL after input is cleared
+    let currentDownloadUrl = '';
     let selectedFormatId = null;
     let currentFormatTab = 'video';
-    let isSyncingUI = false; // NEW: Prevent recursive sync loops
-    let isFormatsExpanded = false; // NEW: Collapsible formats list
+    let isSyncingUI = false;
+    let isFormatsExpanded = false;
 
     const revertVideoBtn = get('revert-video-btn');
 
@@ -190,6 +190,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioTracks = [];
     let subtitleTracks = [];
     let chaptersFile = null;
+
+    // Performance: Limit queue size to prevent unbounded memory growth
+    const MAX_QUEUE_SIZE = 500;
 
     let currentFilePath = null;
     let currentOutputPath = null;
@@ -346,20 +349,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 Array.from(select.options).forEach((option, index) => {
                     const item = document.createElement('div');
                     item.className = 'dropdown-item';
+                    item.dataset.index = index; // Store index for event delegation
                     if (index === select.selectedIndex) item.classList.add('active');
                     item.textContent = option.textContent;
-
-                    item.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        select.selectedIndex = index;
-                        triggerText.textContent = option.textContent;
-                        select.dispatchEvent(new Event('change', { bubbles: true }));
-                        container.classList.remove('open');
-                        updateActiveState();
-                    });
                     menu.appendChild(item);
                 });
             };
+
+            // Use event delegation to prevent listener leak (single listener on menu instead of per-item)
+            menu.addEventListener('click', (e) => {
+                const item = e.target.closest('.dropdown-item');
+                if (!item) return;
+                e.stopPropagation();
+                const index = parseInt(item.dataset.index);
+                select.selectedIndex = index;
+                triggerText.textContent = select.options[index]?.textContent || 'Select...';
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                container.classList.remove('open');
+                updateActiveState();
+            });
 
             // Update active state helper
             const updateActiveState = () => {
@@ -395,7 +403,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             select.addEventListener('change', updateActiveState);
 
-            const observer = new MutationObserver(updateMenuOptions);
+            // Debounce MutationObserver to prevent excessive re-renders from option changes
+            let debounceTimer = null;
+            const debouncedUpdate = () => {
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(updateMenuOptions, 50);
+            };
+            const observer = new MutationObserver(debouncedUpdate);
             observer.observe(select, { childList: true });
         });
     }
@@ -2974,6 +2988,12 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCustomPresets();
 
     function addToQueue(options, taskType = 'encode') {
+        // Performance: Prevent unbounded queue growth
+        if (encodingQueue.length >= MAX_QUEUE_SIZE) {
+            showPopup(`Queue limit reached (${MAX_QUEUE_SIZE} items maximum). Please wait for some items to complete or clear the queue.`);
+            return;
+        }
+
         const id = crypto.randomUUID();
         let name = 'Unknown';
         if (options.input) {
@@ -3003,6 +3023,30 @@ document.addEventListener('DOMContentLoaded', () => {
             queueBadge.classList.toggle('hidden', pendingCount === 0);
         }
         renderQueue();
+    }
+
+    // Performance: Separate function for progress updates to avoid full queue rebuild
+    function updateQueueProgress() {
+        if (!queueList || !currentlyEncodingItemId) return;
+        const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
+        if (!item) return;
+        
+        const itemEl = queueList.querySelector(`[data-id="${item.id}"]`);
+        if (!itemEl) return;
+        
+        const statusEl = itemEl.querySelector('.queue-item-status');
+        const progressEl = itemEl.querySelector('.queue-progress-bar');
+        
+        if (statusEl) {
+            statusEl.innerHTML = `
+                <div style="display:flex;align-items:center;gap:6px">
+                    ${getLoaderHTML(14)}
+                    ${item.taskType === 'trim' ? 'Trimming' : item.taskType === 'extract' ? 'Extracting' : item.taskType === 'download' ? 'Downloading' : 'Encoding'}... ${item.progress}%
+                </div>
+            `;
+        }
+        if (progressEl) progressEl.style.width = `${item.progress}%`;
+        itemEl.classList.add('active');
     }
 
     function renderQueue(isProgressUpdate = false) {
@@ -3361,7 +3405,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
             if (item) {
                 item.progress = data.percent;
-                renderQueue(true);
+                updateQueueProgress(); // Performance: Only update progress, not full queue
             }
         } else {
             if (progressPercent) progressPercent.textContent = `${data.percent}%`;
@@ -3794,7 +3838,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dlVideoFormatGroup) dlVideoFormatGroup.classList.toggle('hidden', isAudio);
             if (dlFpsGroup) dlFpsGroup.classList.toggle('hidden', isAudio);
 
-            // NEW: Toggle Video Codec Group based on mode
+            // Toggle Video Codec Group based on mode
             const dlVideoCodecGroup = get('dl-video-codec-group');
             if (dlVideoCodecGroup) dlVideoCodecGroup.classList.toggle('hidden', isAudio);
 
@@ -3808,7 +3852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // NEW: Sync Format Tabs with Mode
+            // Sync Format Tabs with Mode
             const targetTab = isAudio ? 'audio' : 'video';
             if (currentFormatTab !== targetTab) {
                 currentFormatTab = targetTab;
@@ -3825,7 +3869,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // NEW: Toggle formats list expanded state
+    // Toggle formats list expanded state
     if (dlToggleFormatsBtn) {
         dlToggleFormatsBtn.addEventListener('click', () => {
             isFormatsExpanded = !isFormatsExpanded;
@@ -3833,8 +3877,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // NEW: Add listeners for all sync-relevant dropdowns
-    [dlQualitySelect, dlFormatSelect, dlVideoCodecSelect, dlAudioFormatSelect, dlAudioBitrateSelect].forEach(el => {
+    // Add listeners for all sync-relevant dropdowns (including FPS)
+    [dlQualitySelect, dlFormatSelect, dlVideoCodecSelect, dlFpsSelect, dlAudioFormatSelect, dlAudioBitrateSelect].forEach(el => {
         if (el) {
             el.addEventListener('change', () => {
                 if (!isSyncingUI) syncFormatCardFromDropdowns();
@@ -3849,6 +3893,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const quality = dlQualitySelect.value;
         const format = dlFormatSelect.value;
         const codec = dlVideoCodecSelect ? dlVideoCodecSelect.value : 'copy';
+        const fps = dlFpsSelect ? dlFpsSelect.value : 'none';
         const audioFormat = dlAudioFormatSelect.value;
         const bitrate = dlAudioBitrateSelect.value.replace('k', '');
 
@@ -3856,44 +3901,93 @@ document.addEventListener('DOMContentLoaded', () => {
         let matchingFormatId = null;
 
         if (isAudioTab) {
-            const matchingFormat = currentVideoInfo.formats.find(f => {
+            // For audio: find format matching audio format and bitrate
+            let candidateFormats = currentVideoInfo.formats.filter(f => {
                 if (f.vcodec !== 'none') return false;
                 let ext = f.ext;
                 if (ext === 'ogg') ext = 'vorbis';
                 if (ext === 'aac') ext = 'm4a';
-                if (ext !== audioFormat) return false;
-                const abr = Math.round(f.abr || f.tbr || 0);
-                return abr.toString() === bitrate;
+                return ext === audioFormat;
             });
-            if (matchingFormat) matchingFormatId = matchingFormat.format_id;
+
+            // If we have a specific bitrate requirement, find exact match or closest
+            if (bitrate && bitrate !== '0') {
+                const matchingFormat = candidateFormats.find(f => {
+                    const abr = Math.round(f.abr || f.tbr || 0);
+                    return abr.toString() === bitrate;
+                });
+                if (matchingFormat) {
+                    matchingFormatId = matchingFormat.format_id;
+                }
+            } else if (candidateFormats.length > 0) {
+                // If no specific bitrate, pick the best (highest) bitrate available
+                const sorted = candidateFormats.sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
+                if (sorted[0]) matchingFormatId = sorted[0].format_id;
+            }
         } else {
-            const matchingFormat = currentVideoInfo.formats.find(f => {
+            // For video: find format matching container, quality, and codec
+            let candidateFormats = currentVideoInfo.formats.filter(f => {
                 if (f.vcodec === 'none') return false;
                 if (f.ext !== format) return false;
+                
+                // If quality is "best", accept any quality; otherwise match specific quality
                 if (quality !== 'best' && f.height?.toString() !== quality) return false;
+                
+                // If fps is specified and not "none", check fps match
+                if (fps !== 'none') {
+                    const fpsNum = parseFloat(fps);
+                    const formatFps = parseFloat(f.fps || 0);
+                    if (Math.abs(formatFps - fpsNum) > 0.5) return false; // Allow small tolerance
+                }
 
-                const v = f.vcodec || '';
-                let fCodec = 'copy';
-                if (v.startsWith('avc') || v.includes('h264')) fCodec = 'h264';
-                else if (v.startsWith('hev') || v.includes('h265')) fCodec = 'h265';
-                else if (v.startsWith('av01') || v.includes('av1')) fCodec = 'av1';
-                else if (v.startsWith('vp9') || v.includes('vp09')) fCodec = 'vp9';
-
-                return codec === 'copy' || fCodec === codec;
+                return true;
             });
-            if (matchingFormat) matchingFormatId = matchingFormat.format_id;
+
+            // Filter by codec if not 'copy'
+            if (codec !== 'copy' && candidateFormats.length > 0) {
+                const codecFiltered = candidateFormats.filter(f => {
+                    const v = f.vcodec || '';
+                    let fCodec = 'copy';
+                    if (v.startsWith('avc') || v.includes('h264')) fCodec = 'h264';
+                    else if (v.startsWith('hev') || v.includes('h265')) fCodec = 'h265';
+                    else if (v.startsWith('av01') || v.includes('av1')) fCodec = 'av1';
+                    else if (v.startsWith('vp9') || v.includes('vp09')) fCodec = 'vp9';
+                    return fCodec === codec;
+                });
+                
+                if (codecFiltered.length > 0) {
+                    candidateFormats = codecFiltered;
+                }
+            }
+
+            // If we have candidates, pick the first one (highest resolution/bitrate based on sort)
+            if (candidateFormats.length > 0) {
+                // Sort by height (descending) then by bitrate (descending)
+                candidateFormats.sort((a, b) => {
+                    const heightDiff = (b.height || 0) - (a.height || 0);
+                    if (heightDiff !== 0) return heightDiff;
+                    return (b.tbr || 0) - (a.tbr || 0);
+                });
+                matchingFormatId = candidateFormats[0].format_id;
+            }
         }
 
         // Apply visual selection
         selectedFormatId = matchingFormatId;
+        
+        // Deselect all format cards first
         document.querySelectorAll('.format-card').forEach(card => {
-            if (card.dataset.id === matchingFormatId) {
-                card.classList.add('selected');
-                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            } else {
-                card.classList.remove('selected');
-            }
+            card.classList.remove('selected');
         });
+        
+        // Only select and scroll to view if a matching format was found
+        if (matchingFormatId) {
+            const selectedCard = document.querySelector(`[data-id="${matchingFormatId}"]`);
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+                selectedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
     }
 
     let currentSingleVideoFileName = null;
@@ -3923,7 +4017,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        currentDownloadUrl = url; // NEW: Store active URL
+        currentDownloadUrl = url;
 
         // Clear input field immediately after capture
         if (dlUrlInput) dlUrlInput.value = '';
@@ -3937,7 +4031,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Hide start button while loading
         if (dlStartBtn) dlStartBtn.classList.add('hidden');
 
-        // NEW: Reset formats expanded state
+        // Reset formats expanded state
         isFormatsExpanded = false;
 
         // Reset preview
@@ -3968,7 +4062,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dlModeSelect.dispatchEvent(new Event('change'));
         }
 
-        // NEW: Clean up temporary bitrate options
+        // Clean up temporary bitrate options
         if (dlAudioBitrateSelect) {
             Array.from(dlAudioBitrateSelect.options).forEach(opt => {
                 if (opt.dataset.temporary === 'true') opt.remove();
@@ -4196,7 +4290,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Show start button
                 if (dlStartBtn) dlStartBtn.classList.remove('hidden');
 
-                // NEW: Populate formats for detailed selection
+                // Populate formats for detailed selection
                 currentVideoInfo = info;
                 selectedFormatId = null;
 
@@ -4291,7 +4385,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (dlBackBtn) {
         dlBackBtn.addEventListener('click', () => {
-            // NEW: Cancel pending info requests
+            // Cancel pending info requests
             currentInfoRequestId++;
             clearTimeout(urlInputTimer);
 
@@ -4316,7 +4410,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 showView(queueView);
             } else {
-                // NEW: Clean up temporary bitrate options
+                // Clean up temporary bitrate options
                 if (dlAudioBitrateSelect) {
                     Array.from(dlAudioBitrateSelect.options).forEach(opt => {
                         if (opt.dataset.temporary === 'true') opt.remove();
@@ -4324,7 +4418,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 showView(downloaderDashboard);
             }
-            currentDownloadUrl = ''; // NEW: Clear active URL on back
+            currentDownloadUrl = '';
         });
     }
 
@@ -4344,7 +4438,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 mode: dlModeSelect.value,
                 quality: dlQualitySelect.value,
                 format: dlFormatSelect.value,
-                formatId: selectedFormatId, // NEW: Pass selected format ID
+                formatId: selectedFormatId,
                 fps: dlFpsSelect ? dlFpsSelect.value : 'none',
                 videoBitrate: dlVideoBitrateSelect ? dlVideoBitrateSelect.value : 'none',
                 videoCodec: dlVideoCodecSelect ? dlVideoCodecSelect.value : 'copy',
@@ -4438,7 +4532,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = encodingQueue.find(i => i.id === currentlyEncodingItemId);
             if (item && data.percent !== undefined && data.percent !== null) {
                 item.progress = parseFloat(data.percent);
-                renderQueue(true);
+                updateQueueProgress(); // Performance: Only update progress, not full queue
             }
         }
     });
@@ -4512,7 +4606,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dlNewDownloadBtn.addEventListener('click', () => {
             showView(downloaderDashboard);
             currentDlOutputPath = '';
-            currentDownloadUrl = ''; // NEW: Clear active URL
+            currentDownloadUrl = '';
         });
     }
 
@@ -4658,7 +4752,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
 
             card.onclick = () => {
-                isSyncingUI = true; // NEW: Prevent recursive sync
+                isSyncingUI = true;
                 selectedFormatId = f.format_id;
                 document.querySelectorAll('.format-card').forEach(c => c.classList.remove('selected'));
                 card.classList.add('selected');
@@ -4669,7 +4763,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     dlQualitySelect.dispatchEvent(new Event('change'));
                 }
 
-                // NEW: Ensure mode matches selected format
+                // Ensure mode matches selected format
                 if (dlModeSelect) {
                     const isVideo = checkIsVideoFormat(f);
                     const targetMode = isVideo ? 'video' : 'audio';
@@ -4679,7 +4773,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     // Sync Extension/Container
-                    if (!isAudioRecord && dlFormatSelect) {
+                    if (isVideo && dlFormatSelect) {
                         // Check if extension is one of the supported ones (mp4, mkv, webm, mov)
                         const supported = ['mp4', 'mkv', 'webm', 'mov'];
                         if (supported.includes(f.ext)) {
@@ -4687,7 +4781,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             dlFormatSelect.dispatchEvent(new Event('change'));
                         }
 
-                        // NEW: Sync Video Codec
+                        // Sync Video Codec
                         if (dlVideoCodecSelect) {
                             const vcodec = f.vcodec || 'unknown';
                             let targetCodec = 'copy';
@@ -4699,7 +4793,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             dlVideoCodecSelect.value = targetCodec;
                             dlVideoCodecSelect.dispatchEvent(new Event('change'));
                         }
-                    } else if (isAudioRecord && dlAudioFormatSelect) {
+
+                        // Sync FPS if available
+                        if (dlFpsSelect && f.fps) {
+                            const fpsStr = f.fps.toString();
+                            // Try to find matching FPS option
+                            let fpsOption = Array.from(dlFpsSelect.options).find(o => {
+                                const optVal = parseFloat(o.value);
+                                const fpsVal = parseFloat(fpsStr);
+                                return Math.abs(optVal - fpsVal) < 0.1; // Allow small tolerance
+                            });
+                            
+                            if (fpsOption) {
+                                dlFpsSelect.value = fpsOption.value;
+                                dlFpsSelect.dispatchEvent(new Event('change'));
+                            }
+                        }
+                    } else if (!isVideo && dlAudioFormatSelect) {
                         // Check if extension is one of supported audio (mp3, m4a, opus, vorbis, flac, wav)
                         const supportedAudio = ['mp3', 'm4a', 'opus', 'vorbis', 'flac', 'wav'];
                         // Map some common variations
@@ -4714,7 +4824,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     // Sync Audio Bitrate if available
-                    if (isAudioRecord && dlAudioBitrateSelect) {
+                    if (!isVideo && dlAudioBitrateSelect) {
                         const abr = f.abr || f.tbr;
                         if (abr) {
                             const bitrateStr = Math.round(abr) + 'k';
@@ -4736,7 +4846,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }
-                isSyncingUI = false; // NEW: End sync
+                isSyncingUI = false;
             };
 
             dlFormatsList.appendChild(card);
@@ -4753,6 +4863,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 dlFormatsActions.style.display = 'none';
             }
         }
+
+        // Ensure the currently active tab maintains its .active class
+        if (dlFormatTabs) {
+            dlFormatTabs.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === currentFormatTab) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        // Auto-sync format selection with current dropdown values
+        // This ensures when formats are first loaded, the best matching format is selected
+        if (!isSyncingUI) {
+            setTimeout(() => syncFormatCardFromDropdowns(), 0);
+        }
     }
 
     if (dlFormatTabs) {
@@ -4765,7 +4892,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             currentFormatTab = btn.dataset.tab;
 
-            // NEW: Automatically switch download mode to match tab
+            // Automatically switch download mode to match tab
             if (dlModeSelect) {
                 dlModeSelect.value = currentFormatTab === 'audio' ? 'audio' : 'video';
                 dlModeSelect.dispatchEvent(new Event('change'));

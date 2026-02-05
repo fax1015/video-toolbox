@@ -4412,33 +4412,3 @@ input[type="number"]:focus {
         left: 100%;
     }
 }
-
-/* --- Info Progress Bar (Indeterminate) --- */
-.info-progress-container {
-    width: 100%;
-    margin-top: 10px;
-    height: 4px;
-    background: var(--bg-tertiary);
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-}
-
-.info-progress-fill {
-    position: absolute;
-    width: 40%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
-    border-radius: 4px;
-    animation: info-progress-pulse 1.5s infinite ease-in-out;
-}
-
-@keyframes info-progress-pulse {
-    0% {
-        left: -50%;
-    }
-
-    100% {
-        left: 100%;
-    }
-}

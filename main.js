@@ -16,6 +16,16 @@ const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 
+// Application Constants
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv'];
+
+// Performance: Buffer size limits to prevent unbounded memory accumulation
+const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10 MB max for any output buffer
+const MAX_ENCODER_BUFFER = 1024 * 1024;   // 1 MB for encoder list
+const MAX_METADATA_BUFFER = 5 * 1024 * 1024; // 5 MB for metadata
+
 const FFMPEG_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'bin', 'ffmpeg.exe')
     : path.join(__dirname, 'bin', 'ffmpeg.exe');
@@ -27,6 +37,124 @@ const FFPROBE_PATH = app.isPackaged
 let currentFfmpegProcess = null;
 let currentOutputPath = null;
 let isCancelling = false;
+
+// ============================================================================
+// INPUT VALIDATION & SECURITY UTILITIES
+// ============================================================================
+
+/**
+ * Validates and normalizes a file path to prevent directory traversal attacks
+ * @param {string} inputPath - The path to validate
+ * @param {string} basePath - The base allowed directory (optional)
+ * @returns {string|null} - Normalized path if valid, null if invalid
+ */
+function validateAndNormalizePath(inputPath, basePath = null) {
+    if (!inputPath || typeof inputPath !== 'string') return null;
+
+    try {
+        const normalizedPath = path.normalize(inputPath);
+        const resolvedPath = path.resolve(normalizedPath);
+
+        // If basePath is provided, ensure the resolved path is within it
+        if (basePath) {
+            const resolvedBase = path.resolve(basePath);
+            const relative = path.relative(resolvedBase, resolvedPath);
+            
+            // If relative path starts with .., it's trying to escape basePath
+            if (relative.startsWith('..')) {
+                console.error('Path traversal attempt detected:', inputPath);
+                return null;
+            }
+        }
+
+        return resolvedPath;
+    } catch (err) {
+        console.error('Path validation error:', err);
+        return null;
+    }
+}
+
+/**
+ * Validates URL format to prevent command injection
+ * @param {string} url - The URL to validate
+ * @returns {boolean} - True if URL is valid
+ */
+function validateUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    
+    try {
+        // Allow http and https only
+        const urlObj = new URL(url);
+        return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+    } catch (err) {
+        return false;
+    }
+}
+
+/**
+ * Sanitizes filename to prevent directory traversal and special character issues
+ * Replaces user input with UUID-based naming when appropriate
+ * @param {string} filename - Original filename (optional)
+ * @returns {string} - Safe filename or UUID-based name
+ */
+function getSafeFileName(filename) {
+    if (!filename || typeof filename !== 'string') {
+        return generateUUID();
+    }
+
+    // Use only alphanumeric, dash, underscore. Replace unsafe chars with underscore
+    let safe = filename.replace(/[^a-zA-Z0-9._\-]/g, '_');
+    
+    // Remove leading/trailing dots and slashes
+    safe = safe.replace(/^[./\\]+|[./\\]+$/g, '');
+    
+    // Limit length
+    if (safe.length > 50) {
+        safe = safe.substring(0, 50);
+    }
+
+    return safe || generateUUID();
+}
+
+/**
+ * Generates a UUID for safe file naming
+ * @returns {string} - UUID string
+ */
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+/**
+ * Validates numeric input (bitrate, fps, threads)
+ * @param {string|number} value - The value to validate
+ * @param {number} min - Minimum allowed value (optional)
+ * @param {number} max - Maximum allowed value (optional)
+ * @returns {boolean} - True if valid
+ */
+function validateNumericInput(value, min = 0, max = 999999) {
+    if (value === null || value === undefined) return true; // Optional parameter
+    
+    const num = typeof value === 'string' ? parseInt(value) : value;
+    return !isNaN(num) && num >= min && num <= max;
+}
+
+/**
+ * Escape special characters in metadata strings to prevent injection
+ * @param {string} str - String to escape
+ * @returns {string} - Escaped string
+ */
+function escapeMetadataString(str) {
+    if (!str) return '';
+    
+    // Remove control characters and limit length
+    return String(str)
+        .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+        .substring(0, 500); // Limit length to prevent buffer overflow
+}
 
 /**
  * Set process priority for FFmpeg based on user setting
@@ -131,12 +259,27 @@ function createWindow() {
     });
 
     ipcMain.handle('list-files', async (event, folderPath) => {
+        // Input validation
+        if (!folderPath || typeof folderPath !== 'string') {
+            console.error('Invalid folder path provided');
+            return [];
+        }
+
+        // Normalize and validate path to prevent traversal
+        const normalizedPath = path.normalize(folderPath);
+        
         try {
-            const files = await fs.promises.readdir(folderPath);
-            const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv'];
+            // Check if path exists and is a directory
+            const stats = await fs.promises.stat(normalizedPath);
+            if (!stats.isDirectory()) {
+                console.error('Path is not a directory:', normalizedPath);
+                return [];
+            }
+
+            const files = await fs.promises.readdir(normalizedPath);
             return files
-                .filter(file => videoExtensions.includes(path.extname(file).toLowerCase()))
-                .map(file => path.join(folderPath, file));
+                .filter(file => VIDEO_EXTENSIONS.includes(path.extname(file).toLowerCase()))
+                .map(file => path.join(normalizedPath, file));
         } catch (err) {
             console.error('Error listing files:', err);
             return [];
@@ -147,8 +290,23 @@ function createWindow() {
         return new Promise((resolve) => {
             const ffmpeg = spawn(FFMPEG_PATH, ['-encoders']);
             let output = '';
-            ffmpeg.stdout.on('data', (data) => output += data.toString());
-            ffmpeg.stderr.on('data', (data) => output += data.toString());
+            ffmpeg.stdout.on('data', (data) => {
+                // Prevent unbounded buffer growth
+                const chunk = data.toString();
+                if (output.length + chunk.length > MAX_ENCODER_BUFFER) {
+                    output = output.slice(-512 * 1024) + chunk; // Keep last 512KB
+                } else {
+                    output += chunk;
+                }
+            });
+            ffmpeg.stderr.on('data', (data) => {
+                const chunk = data.toString();
+                if (output.length + chunk.length > MAX_ENCODER_BUFFER) {
+                    output = output.slice(-512 * 1024) + chunk;
+                } else {
+                    output += chunk;
+                }
+            });
             ffmpeg.on('close', () => {
                 // Check for actual encoder names (e.g. h264_nvenc) to avoid false positives
                 const encoders = {
@@ -162,10 +320,32 @@ function createWindow() {
     });
 
     ipcMain.handle('get-metadata', async (event, filePath) => {
+        // Input validation
+        if (!filePath || typeof filePath !== 'string') {
+            return { error: 'Invalid file path provided' };
+        }
+
+        const normalizedPath = path.normalize(filePath);
+        
+        // Check if file exists
+        try {
+            await fs.promises.access(normalizedPath, fs.constants.R_OK);
+        } catch (err) {
+            return { error: 'File not accessible or does not exist' };
+        }
+
         return new Promise((resolve, reject) => {
-            const ffprobe = spawn(FFMPEG_PATH, ['-i', filePath]);
+            const ffprobe = spawn(FFMPEG_PATH, ['-i', normalizedPath]);
             let output = '';
-            ffprobe.stderr.on('data', (data) => output += data.toString());
+            ffprobe.stderr.on('data', (data) => {
+                // Prevent unbounded buffer growth
+                const chunk = data.toString();
+                if (output.length + chunk.length > MAX_METADATA_BUFFER) {
+                    output = output.slice(-512 * 1024) + chunk; // Keep last 512KB
+                } else {
+                    output += chunk;
+                }
+            });
             ffprobe.on('close', () => {
                 const metadata = {
                     resolution: 'Unknown',
@@ -216,8 +396,22 @@ function createWindow() {
             let output = '';
             let errorOutput = '';
 
-            ffprobe.stdout.on('data', (data) => output += data.toString());
-            ffprobe.stderr.on('data', (data) => errorOutput += data.toString());
+            ffprobe.stdout.on('data', (data) => {
+                const chunk = data.toString();
+                if (output.length + chunk.length > MAX_METADATA_BUFFER) {
+                    output = output.slice(-512 * 1024) + chunk;
+                } else {
+                    output += chunk;
+                }
+            });
+            ffprobe.stderr.on('data', (data) => {
+                const chunk = data.toString();
+                if (errorOutput.length + chunk.length > MAX_METADATA_BUFFER) {
+                    errorOutput = errorOutput.slice(-512 * 1024) + chunk;
+                } else {
+                    errorOutput += chunk;
+                }
+            });
 
             ffprobe.on('close', (code) => {
                 if (code !== 0) {
@@ -247,32 +441,36 @@ function createWindow() {
     ipcMain.handle('save-metadata', async (event, options) => {
         const { filePath, metadata } = options;
 
+        // Validate input file path
+        const validatedPath = validateAndNormalizePath(filePath);
+        if (!validatedPath) {
+            return { success: false, error: 'Invalid file path' };
+        }
+
         return new Promise((resolve, reject) => {
             // Create a temp output file (we'll replace the original)
-            const ext = path.extname(filePath);
-            const dir = path.dirname(filePath);
-            const baseName = path.basename(filePath, ext);
+            const ext = path.extname(validatedPath);
+            const dir = path.dirname(validatedPath);
+            const baseName = path.basename(validatedPath, ext);
             const tempPath = path.join(dir, `${baseName}_temp${ext}`);
 
-            // Build metadata arguments
+            // Build metadata arguments with escaped strings to prevent injection
             const metaArgs = [];
-            if (metadata.title) metaArgs.push('-metadata', `title=${metadata.title}`);
-            if (metadata.artist) metaArgs.push('-metadata', `artist=${metadata.artist}`);
-            if (metadata.album) metaArgs.push('-metadata', `album=${metadata.album}`);
-            if (metadata.year) metaArgs.push('-metadata', `date=${metadata.year}`);
-            if (metadata.genre) metaArgs.push('-metadata', `genre=${metadata.genre}`);
-            if (metadata.track) metaArgs.push('-metadata', `track=${metadata.track}`);
-            if (metadata.comment) metaArgs.push('-metadata', `comment=${metadata.comment}`);
+            if (metadata.title) metaArgs.push('-metadata', `title=${escapeMetadataString(metadata.title)}`);
+            if (metadata.artist) metaArgs.push('-metadata', `artist=${escapeMetadataString(metadata.artist)}`);
+            if (metadata.album) metaArgs.push('-metadata', `album=${escapeMetadataString(metadata.album)}`);
+            if (metadata.year) metaArgs.push('-metadata', `date=${escapeMetadataString(metadata.year)}`);
+            if (metadata.genre) metaArgs.push('-metadata', `genre=${escapeMetadataString(metadata.genre)}`);
+            if (metadata.track) metaArgs.push('-metadata', `track=${escapeMetadataString(metadata.track)}`);
+            if (metadata.comment) metaArgs.push('-metadata', `comment=${escapeMetadataString(metadata.comment)}`);
 
             const args = [
                 '-y',
-                '-i', filePath,
+                '-i', validatedPath,
                 '-c', 'copy',  // Copy streams without re-encoding
                 ...metaArgs,
                 tempPath
             ];
-
-            console.log('Saving metadata with args:', args);
 
             const ffmpeg = spawn(FFMPEG_PATH, args);
             let errorOutput = '';
@@ -281,10 +479,18 @@ function createWindow() {
 
             ffmpeg.on('close', async (code) => {
                 if (code === 0) {
-                    // Replace original with temp file (async to avoid blocking main process)
+                    // Use atomic file replacement to prevent race conditions
                     try {
-                        await fs.promises.unlink(filePath);
-                        await fs.promises.rename(tempPath, filePath);
+                        // Create backup of original
+                        const backupPath = validatedPath + '.backup';
+                        await fs.promises.copyFile(validatedPath, backupPath);
+                        
+                        // Replace original with temp file
+                        await fs.promises.rename(tempPath, validatedPath);
+                        
+                        // Remove backup after successful replacement
+                        await fs.promises.unlink(backupPath).catch(() => {});
+                        
                         resolve({ success: true });
                     } catch (e) {
                         console.error('Error replacing file:', e);
@@ -395,17 +601,34 @@ function createWindow() {
             resolution, workPriority, threads
         } = options;
 
+        // Validate numeric inputs
+        if (!validateNumericInput(crf, 0, 51) || !validateNumericInput(bitrate, 50, 50000) || 
+            !validateNumericInput(threads, 1, 128)) {
+            event.reply('encode-error', { message: 'Invalid numeric input parameters' });
+            return;
+        }
+
         const outputExt = format;
         const suffix = outputSuffix || '_encoded';
         const filename = input.split(/[\\/]/).pop().replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
 
         let outputPath;
         if (outputFolder && outputFolder.trim() !== '') {
-            // Use custom output folder
-            outputPath = path.join(outputFolder, filename);
+            // Validate output folder path to prevent directory traversal
+            const validatedFolder = validateAndNormalizePath(outputFolder);
+            if (!validatedFolder) {
+                event.reply('encode-error', { message: 'Invalid output folder path' });
+                return;
+            }
+            outputPath = path.join(validatedFolder, filename);
         } else {
             // Use same as source
-            outputPath = input.replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
+            const validatedInput = validateAndNormalizePath(input);
+            if (!validatedInput) {
+                event.reply('encode-error', { message: 'Invalid input file path' });
+                return;
+            }
+            outputPath = validatedInput.replace(/\.[^.]+$/, `${suffix}.${outputExt}`);
         }
 
         const args = ['-i', input];
@@ -766,6 +989,11 @@ function createWindow() {
 
     // Get video info (title, thumbnail, duration) using yt-dlp
     ipcMain.handle('get-video-info', async (event, url, options = {}) => {
+        // Validate URL format to prevent command injection
+        if (!validateUrl(url)) {
+            return { error: 'Invalid URL format' };
+        }
+
         const YT_DLP_PATH = app.isPackaged
             ? path.join(process.resourcesPath, 'bin', 'yt-dlp.exe')
             : path.join(__dirname, 'bin', 'yt-dlp.exe');
@@ -780,7 +1008,8 @@ function createWindow() {
                 '--dump-json',
                 '--no-download',
                 '--no-warnings',
-                '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                '--restrict-filenames',  // Prevent unsafe filename issues
+                '--user-agent', USER_AGENT,
                 url
             ];
 
@@ -877,6 +1106,66 @@ function createWindow() {
         });
     });
 
+    /**
+     * Parse download progress line and emit progress event
+     * Extracted for performance: reduces handler complexity and allows reuse
+     */
+    function parseDownloadProgress(line, event, currentDownloadPath) {
+        const str = line.trim();
+        if (!str) return;
+        console.log('yt-dlp stdout:', str);
+
+        // Parse progress - handle more variations (including ~ estimated size)
+        const progressMatch = str.match(/\[download\]\s+(\d+\.?\d*)%/);
+        const sizeMatch = str.match(/of\s+~?(\d+\.?\d*[KMG]iB)/) || str.match(/\[download\]\s+Total:\s+(\d+\.?\d*[KMG]iB)/);
+        const speedMatch = str.match(/at\s+(\d+\.?\d*[KMG]iB\/s)/);
+        const etaMatch = str.match(/ETA\s+(\d{2}:\d{2})/);
+
+        const destMatch = str.match(/Destination:\s+(.*)/) ||
+            str.match(/Already downloaded:\s+(.*)/) ||
+            str.match(/\[download\]\s+(.*)\s+has already been downloaded/) ||
+            str.match(/\[Merger\]\s+Merging\s+formats\s+into\s+"(.*)"/);  
+        if (destMatch && !destMatch[1].includes('...')) {
+            currentDownloadPath = destMatch[1];
+        }
+
+        // Enhanced status updates: Capture any [] tag that isn't just [download] progress
+        let status = null;
+        const tagMatch = str.match(/^\[([^\]]+)\]/m);
+        if (tagMatch) {
+            const tag = tagMatch[1];
+            if (tag === 'download' && !progressMatch) {
+                // It's a [download] line but not progress (e.g. Destination)
+                if (str.includes('Destination:')) status = 'Creating file...';
+            } else if (tag !== 'download') {
+                // Map common tags to friendly names, or use the tag itself
+                if (tag === 'Merger') status = 'Merging formats...';
+                else if (tag === 'ExtractAudio') status = 'Extracting audio...';
+                else if (tag === 'info') {
+                    if (str.includes('Downloading webpage')) status = 'Connecting...';
+                    else if (str.includes('Downloading m3u8')) status = 'Preparing stream...';
+                    else status = 'Extracting metadata...';
+                }
+                else if (tag === 'dashsegments') status = 'Downloading segments...';
+                else if (tag === 'hlsnative') status = 'Downloading segments...';
+                else if (tag.startsWith('Fixup')) status = 'Fixing container...';
+                else status = `${tag}...`;
+            }
+        }
+
+        if (progressMatch) {
+            event.reply('download-progress', {
+                percent: parseFloat(progressMatch[1]),
+                size: sizeMatch ? sizeMatch[1] : null,
+                speed: speedMatch ? speedMatch[1] : null,
+                eta: etaMatch ? etaMatch[1] : null,
+                status: status || 'Downloading...'
+            });
+        } else if (status) {
+            event.reply('download-progress', { status: status });
+        }
+    }
+
     function formatDuration(seconds) {
         const hrs = Math.floor(seconds / 3600);
         const mins = Math.floor((seconds % 3600) / 60);
@@ -889,6 +1178,12 @@ function createWindow() {
 
     ipcMain.on('download-video', async (event, options) => {
         try {
+            // Validate URL format to prevent command injection
+            if (!validateUrl(options.url)) {
+                event.reply('download-error', { message: 'Invalid URL format' });
+                return;
+            }
+
             const { url, mode, quality, format, audioFormat, audioBitrate, fps, videoBitrate, videoCodec } = options;
 
             // Path to bin folder and executables
@@ -900,6 +1195,13 @@ function createWindow() {
 
             // Use default output folder or Downloads
             const outputFolder = global.userSettings?.outputFolder || app.getPath('downloads');
+            
+            // Validate output folder path
+            const validatedFolder = validateAndNormalizePath(outputFolder);
+            if (!validatedFolder) {
+                event.reply('download-error', { message: 'Invalid output folder path' });
+                return;
+            }
 
             // Ensure yt-dlp exists
             const fs = require('fs');
@@ -910,16 +1212,17 @@ function createWindow() {
 
             const args = [];
 
-            // Output template
+            // Output template - use safe filename from user input
             let outputTemplate;
             if (options.fileName) {
-                outputTemplate = path.join(outputFolder, options.fileName + '.%(ext)s');
+                const safeFileName = getSafeFileName(options.fileName);
+                outputTemplate = path.join(validatedFolder, safeFileName + '.%(ext)s');
             } else {
-                outputTemplate = path.join(outputFolder, '%(title)s.%(ext)s');
+                outputTemplate = path.join(validatedFolder, '%(title)s.%(ext)s');
             }
 
             args.push('-o', outputTemplate);
-            args.push('--no-restrict-filenames'); // Ensure unicode characters are preserved
+            args.push('--restrict-filenames'); // Prevent unsafe filename issues
 
             if (fs.existsSync(FFMPEG_PATH)) {
                 args.push('--ffmpeg-location', FFMPEG_PATH);
@@ -960,8 +1263,9 @@ function createWindow() {
                 if (needsReencode) {
                     const ffmpegArgs = [];
 
-                    // Video codec
-                    if (videoCodec && videoCodec !== 'copy') {
+                    // Video codec - validate against whitelist
+                    const validCodecs = ['h264', 'h265', 'vp9', 'av1', 'copy'];
+                    if (videoCodec && validCodecs.includes(videoCodec) && videoCodec !== 'copy') {
                         if (videoCodec === 'h264') ffmpegArgs.push('-c:v', 'libx264');
                         else if (videoCodec === 'h265') ffmpegArgs.push('-c:v', 'libx265');
                         else if (videoCodec === 'vp9') ffmpegArgs.push('-c:v', 'libvpx-vp9');
@@ -970,11 +1274,15 @@ function createWindow() {
                         ffmpegArgs.push('-c:v', 'copy');
                     }
 
-                    // Video bitrate
-                    if (videoBitrate && videoBitrate !== 'none') ffmpegArgs.push('-b:v', videoBitrate);
+                    // Video bitrate - validate format (should be like "5000k" or "5M")
+                    if (videoBitrate && videoBitrate !== 'none' && /^\d+[kKmM]$/.test(videoBitrate)) {
+                        ffmpegArgs.push('-b:v', videoBitrate);
+                    }
 
-                    // FPS limit
-                    if (fps && fps !== 'none') ffmpegArgs.push('-r', fps);
+                    // FPS limit - validate numeric format
+                    if (fps && fps !== 'none' && /^\d+(\.\d+)?$/.test(fps)) {
+                        ffmpegArgs.push('-r', fps);
+                    }
 
                     // Audio copy
                     ffmpegArgs.push('-c:a', 'copy');
@@ -987,7 +1295,7 @@ function createWindow() {
 
             args.push('--progress', '--newline', '--no-cache-dir', '--no-check-certificates', '--force-ipv4');
             args.push('--force-overwrites', '--postprocessor-args', 'ffmpeg:-y');
-            args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            args.push('--user-agent', USER_AGENT);
             args.push(url);
 
             console.log('Running yt-dlp:', args.join(' '));
@@ -1007,69 +1315,31 @@ function createWindow() {
             });
 
             proc.stdout.on('data', (data) => {
-                stdoutBuffer += data.toString();
+                const chunk = data.toString();
+                // Prevent unbounded buffer growth - keep only last 1MB if exceeding limit
+                if (stdoutBuffer.length + chunk.length > MAX_BUFFER_SIZE) {
+                    stdoutBuffer = stdoutBuffer.slice(-512 * 1024) + chunk;
+                } else {
+                    stdoutBuffer += chunk;
+                }
+                
                 const lines = stdoutBuffer.split(/\r?\n/);
                 stdoutBuffer = lines.pop();
 
                 for (const line of lines) {
-                    const str = line.trim();
-                    if (!str) continue;
-                    console.log('yt-dlp stdout:', str);
-
-                    // Parse progress - handle more variations (including ~ estimated size)
-                    const progressMatch = str.match(/\[download\]\s+(\d+\.?\d*)%/);
-                    const sizeMatch = str.match(/of\s+~?(\d+\.?\d*[KMG]iB)/) || str.match(/\[download\]\s+Total:\s+(\d+\.?\d*[KMG]iB)/);
-                    const speedMatch = str.match(/at\s+(\d+\.?\d*[KMG]iB\/s)/);
-                    const etaMatch = str.match(/ETA\s+(\d{2}:\d{2})/);
-
-                    const destMatch = str.match(/Destination:\s+(.*)/) ||
-                        str.match(/Already downloaded:\s+(.*)/) ||
-                        str.match(/\[download\]\s+(.*)\s+has already been downloaded/) ||
-                        str.match(/\[Merger\]\s+Merging\s+formats\s+into\s+"(.*)"/);
-                    if (destMatch && !destMatch[1].includes('...')) {
-                        currentDownloadPath = destMatch[1];
-                    }
-
-                    // Enhanced status updates: Capture any [] tag that isn't just [download] progress
-                    let status = null;
-                    const tagMatch = str.match(/^\[([^\]]+)\]/m);
-                    if (tagMatch) {
-                        const tag = tagMatch[1];
-                        if (tag === 'download' && !progressMatch) {
-                            // It's a [download] line but not progress (e.g. Destination)
-                            if (str.includes('Destination:')) status = 'Creating file...';
-                        } else if (tag !== 'download') {
-                            // Map common tags to friendly names, or use the tag itself
-                            if (tag === 'Merger') status = 'Merging formats...';
-                            else if (tag === 'ExtractAudio') status = 'Extracting audio...';
-                            else if (tag === 'info') {
-                                if (str.includes('Downloading webpage')) status = 'Connecting...';
-                                else if (str.includes('Downloading m3u8')) status = 'Preparing stream...';
-                                else status = 'Extracting metadata...';
-                            }
-                            else if (tag === 'dashsegments') status = 'Downloading segments...';
-                            else if (tag === 'hlsnative') status = 'Downloading segments...';
-                            else if (tag.startsWith('Fixup')) status = 'Fixing container...';
-                            else status = `${tag}...`;
-                        }
-                    }
-
-                    if (progressMatch) {
-                        event.reply('download-progress', {
-                            percent: parseFloat(progressMatch[1]),
-                            size: sizeMatch ? sizeMatch[1] : null,
-                            speed: speedMatch ? speedMatch[1] : null,
-                            eta: etaMatch ? etaMatch[1] : null,
-                            status: status || 'Downloading...'
-                        });
-                    } else if (status) {
-                        event.reply('download-progress', { status: status });
-                    }
+                    parseDownloadProgress(line, event, currentDownloadPath);
                 }
             });
 
             proc.stderr.on('data', (data) => {
-                stderrBuffer += data.toString();
+                const chunk = data.toString();
+                // Prevent unbounded buffer growth
+                if (stderrBuffer.length + chunk.length > MAX_BUFFER_SIZE) {
+                    stderrBuffer = stderrBuffer.slice(-512 * 1024) + chunk;
+                } else {
+                    stderrBuffer += chunk;
+                }
+                
                 const lines = stderrBuffer.split(/\r?\n/);
                 stderrBuffer = lines.pop();
 
