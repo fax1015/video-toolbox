@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('electron', {
     listFiles: (folderPath) => ipcRenderer.invoke('list-files', folderPath),
     getMetadata: (filePath) => ipcRenderer.invoke('get-metadata', filePath),
     getMetadataFull: (filePath) => ipcRenderer.invoke('get-metadata-full', filePath),
-    getAudioWaveform: (filePath) => ipcRenderer.invoke('get-audio-waveform', filePath),
+    getAudioWaveform: (options) => ipcRenderer.invoke('get-audio-waveform', options),
     getVideoThumbnails: (options) => ipcRenderer.invoke('get-video-thumbnails', options),
     getEncoders: () => ipcRenderer.invoke('get-encoders'),
     startEncode: (options) => ipcRenderer.send('start-encode', options),

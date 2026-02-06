@@ -13,6 +13,21 @@ let isSyncingUI = false;
 let currentInfoRequestId = 0;
 let currentDlOutputPath = '';
 
+function formatAudioLabel(codec) {
+    if (!codec) return 'Audio';
+    const normalized = codec.toLowerCase();
+
+    if (normalized.startsWith('mp4a.40.2')) return 'AAC-LC';
+    if (normalized.startsWith('mp4a.40.5')) return 'HE-AAC';
+    if (normalized.startsWith('mp4a.40.29')) return 'HE-AACv2';
+    if (normalized.includes('opus')) return 'OPUS';
+    if (normalized.includes('vorbis')) return 'VORBIS';
+    if (normalized.includes('mp3')) return 'MP3';
+    if (normalized.includes('aac')) return 'AAC';
+
+    return codec.toUpperCase();
+}
+
 export function setCurrentDownloadUrl(url) {
     currentDownloadUrl = url;
 }
@@ -192,7 +207,7 @@ export function renderFormats() {
         
         // Resolution as primary display (or audio indicator)
         const resolutionText = isAudio 
-            ? (f.acodec || 'Audio')
+            ? formatAudioLabel(f.acodec)
             : (f.height ? `${f.height}p` : 'Unknown');
         
         // Badges for secondary info
@@ -206,10 +221,7 @@ export function renderFormats() {
         const codecName = rawCodec.toUpperCase().split('.')[0].substring(0, 6);
         badges.push(codecName);
         
-        // FPS for video
-        if (!isAudio && f.fps) {
-            badges.push(`${Math.round(f.fps)}fps`);
-        }
+        const fpsText = (!isAudio && f.fps) ? `${Math.round(f.fps)}fps` : '';
         
         const bitrate = isAudio
             ? (f.abr ? `${Math.round(f.abr)} kbps` : (f.tbr ? `${Math.round(f.tbr)} kbps` : ''))
@@ -229,9 +241,12 @@ export function renderFormats() {
             <div class="format-card ${isSelected ? 'selected' : ''}" data-id="${f.format_id}" title="${tooltip}">
                 <div class="format-card-header">
                     <span class="format-resolution">${resolutionText}</span>
-                    ${badges.map(b => `<span class="format-badge">${b}</span>`).join('')}
+                    <div class="format-badges">
+                        ${badges.map(b => `<span class="format-badge">${b}</span>`).join('')}
+                    </div>
                 </div>
                 <div class="format-details">
+                    ${fpsText ? `<span>${fpsText}</span>` : ''}
                     ${bitrate ? `<span>${bitrate}</span>` : ''}
                     ${f.filesize ? `<span>${formatBytes(f.filesize)}</span>` : ''}
                 </div>
@@ -284,6 +299,23 @@ function syncDropdownsFromFormatCard(formatId) {
 
     const isAudio = format.vcodec === 'none';
 
+    const setSelectValue = (selectEl, value, label) => {
+        if (!selectEl || value === undefined || value === null) return;
+        Array.from(selectEl.options).forEach(opt => {
+            if (opt.dataset.temporary === 'true') opt.remove();
+        });
+        const stringValue = value.toString();
+        if (!Array.from(selectEl.options).some(opt => opt.value === stringValue)) {
+            const tempOption = document.createElement('option');
+            tempOption.value = stringValue;
+            tempOption.textContent = label || stringValue;
+            tempOption.dataset.temporary = 'true';
+            selectEl.appendChild(tempOption);
+        }
+        selectEl.value = stringValue;
+        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
     // Switch mode tab AND format tab to match format type
     const targetFormatTab = isAudio ? 'audio' : 'video';
     if (currentFormatTab !== targetFormatTab) {
@@ -301,7 +333,7 @@ function syncDropdownsFromFormatCard(formatId) {
     
     if (dlModeSelect && dlModeSelect.value !== (isAudio ? 'audio' : 'video')) {
         isSyncingUI = true;
-        dlModeSelect.value = isAudio ? 'audio' : 'video';
+        setSelectValue(dlModeSelect, isAudio ? 'audio' : 'video');
         isSyncingUI = false;
     }
 
@@ -310,36 +342,23 @@ function syncDropdownsFromFormatCard(formatId) {
             let ext = format.ext;
             if (ext === 'ogg') ext = 'vorbis';
             if (ext === 'aac') ext = 'm4a';
-            dlAudioFormatSelect.value = ext;
+            setSelectValue(dlAudioFormatSelect, ext, ext.toUpperCase());
         }
 
         if (dlAudioBitrateSelect) {
             const bitrate = Math.round(format.abr || format.tbr || 192);
-            const existingOption = Array.from(dlAudioBitrateSelect.options).find(opt => opt.value === `${bitrate}k`);
-            
-            if (!existingOption) {
-                const tempOption = document.createElement('option');
-                tempOption.value = `${bitrate}k`;
-                tempOption.textContent = `${bitrate}k`;
-                tempOption.dataset.temporary = 'true';
-                dlAudioBitrateSelect.appendChild(tempOption);
-            }
-            
-            dlAudioBitrateSelect.value = `${bitrate}k`;
+            setSelectValue(dlAudioBitrateSelect, `${bitrate}k`, `${bitrate} kbps`);
         }
     } else {
-        if (dlFormatSelect) dlFormatSelect.value = format.ext;
+        if (dlFormatSelect) setSelectValue(dlFormatSelect, format.ext, format.ext.toUpperCase());
         
         if (dlQualitySelect && format.height) {
-            dlQualitySelect.value = format.height.toString();
+            setSelectValue(dlQualitySelect, format.height.toString(), `${format.height}p`);
         }
 
         if (dlFpsSelect && format.fps) {
             const fps = Math.round(format.fps);
-            const existingOption = Array.from(dlFpsSelect.options).find(opt => opt.value === fps.toString());
-            if (existingOption) {
-                dlFpsSelect.value = fps.toString();
-            }
+            setSelectValue(dlFpsSelect, fps.toString(), `${fps} FPS`);
         }
 
         if (dlVideoCodecSelect) {
@@ -349,7 +368,7 @@ function syncDropdownsFromFormatCard(formatId) {
             else if (vcodec.startsWith('hev') || vcodec.includes('h265')) codec = 'h265';
             else if (vcodec.startsWith('av01') || vcodec.includes('av1')) codec = 'av1';
             else if (vcodec.startsWith('vp9') || vcodec.includes('vp09')) codec = 'vp9';
-            dlVideoCodecSelect.value = codec;
+            setSelectValue(dlVideoCodecSelect, codec);
         }
     }
 }

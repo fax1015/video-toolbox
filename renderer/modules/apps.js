@@ -8,6 +8,7 @@ export function setupAppsHandlers() {
     const appsDashboard = get('apps-dashboard');
     const navApps = get('nav-apps');
 
+    syncToolNavIcons();
     renderSidebarApps();
     renderAppsGrid();
 
@@ -22,6 +23,15 @@ export function setupAppsHandlers() {
             showView(appsDashboard);
         });
     }
+}
+
+function syncToolNavIcons() {
+    TOOL_REGISTRY.forEach(tool => {
+        if (!tool.navId || !tool.icon) return;
+        const nav = get(tool.navId);
+        if (!nav) return;
+        nav.innerHTML = tool.icon;
+    });
 }
 
 function togglePin(toolId) {

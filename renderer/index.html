@@ -39,59 +39,13 @@
         <div class="content-wrapper">
             <aside class="app-sidebar">
                 <div class="sidebar-nav">
-                    <button class="nav-item active" id="nav-video" title="Single Video">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-                            <line x1="7" y1="2" x2="7" y2="22"></line>
-                            <line x1="17" y1="2" x2="17" y2="22"></line>
-                            <line x1="2" y1="12" x2="22" y2="12"></line>
-                            <line x1="2" y1="7" x2="7" y2="7"></line>
-                            <line x1="2" y1="17" x2="7" y2="17"></line>
-                            <line x1="17" y1="17" x2="22" y2="17"></line>
-                            <line x1="17" y1="7" x2="22" y2="7"></line>
-                        </svg>
-                    </button>
-                    <button class="nav-item" id="nav-folder" title="Batch Folders">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
-                            </path>
-                        </svg>
-                    </button>
-                    <button class="nav-item" id="nav-trim" title="Trim Video">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                        </svg>
-                    </button>
-                    <button class="nav-item" id="nav-extract-audio" title="Extract Audio">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M9 18V5l12-2v13"></path>
-                            <circle cx="6" cy="18" r="3"></circle>
-                            <circle cx="18" cy="16" r="3"></circle>
-                        </svg>
-                    </button>
+                    <button class="nav-item active" id="nav-video" data-tool-id="converter" title="Single Video"></button>
+                    <button class="nav-item" id="nav-folder" data-tool-id="folder" title="Batch Folders"></button>
+                    <button class="nav-item" id="nav-trim" data-tool-id="trim" title="Trim Video"></button>
+                    <button class="nav-item" id="nav-extract-audio" data-tool-id="extract-audio" title="Extract Audio"></button>
 
-                    <button class="nav-item" id="nav-downloader" title="Video Downloader">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                    </button>
-                    <button class="nav-item" id="nav-inspector" title="Media Inspector">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            <line x1="11" y1="8" x2="11" y2="14"></line>
-                            <line x1="8" y1="11" x2="14" y2="11"></line>
-                        </svg>
-                    </button>
+                    <button class="nav-item" id="nav-downloader" data-tool-id="downloader" title="Video Downloader"></button>
+                    <button class="nav-item" id="nav-inspector" data-tool-id="inspector" title="Media Inspector"></button>
 
                     <div class="sidebar-divider"></div>
                     <button class="nav-item" id="nav-queue" title="Encoding Queue">
@@ -577,9 +531,13 @@
                         </div>
                     </div>
                     <div class="settings-panel trim-panel">
-                        <h4 class="panel-title">Trim Range</h4>
+                        <h4 class="panel-title">Preview</h4>
                         <div class="video-preview-container" id="video-preview-container">
                             <video id="trim-video-preview" class="trim-video-preview"></video>
+                            <div class="trim-loading hidden" id="trim-loading" aria-live="polite">
+                                <div class="loading-spinner"></div>
+                                <span>Loading preview...</span>
+                            </div>
                             <div id="scrub-preview" class="scrub-preview hidden"></div>
                             <div class="video-overlay" id="video-overlay">
                                 <svg class="play-pause-icon" id="play-pause-icon" width="64" height="64"
@@ -618,20 +576,31 @@
                         </div>
                         <div class="trim-timeline-wrap">
                             <div class="trim-timeline" id="trim-timeline">
-                                <div class="trim-playhead" id="trim-playhead"></div>
-                                <div class="trim-waveform-wrap" id="trim-waveform-wrap">
-                                    <img id="trim-waveform-img" class="trim-waveform-img" alt="" />
-                                </div>
-                                <div class="trim-timeline-track" id="trim-track">
-                                    <div class="trim-timeline-inactive" id="trim-inactive-start"></div>
-                                    <div class="trim-range-handles" id="trim-range-handles">
-                                        <div class="trim-handle trim-handle-left" id="trim-handle-left"
-                                            title="Drag to set start"></div>
-                                        <div class="trim-timeline-active" id="trim-active-segment"></div>
-                                        <div class="trim-handle trim-handle-right" id="trim-handle-right"
-                                            title="Drag to set end"></div>
+                                <div class="trim-waveform-toolbar">
+                                    <span class="trim-waveform-label">Trim Range</span>
+                                    <div class="tab-btn-group" role="group" aria-label="Waveform view">
+                                        <button class="tab-btn active" id="trim-waveform-mode-waveform"
+                                            data-mode="waveform" type="button">Waveform</button>
+                                        <button class="tab-btn" id="trim-waveform-mode-spectrogram"
+                                            data-mode="spectrogram" type="button">Spectrogram</button>
                                     </div>
-                                    <div class="trim-timeline-inactive" id="trim-inactive-end"></div>
+                                </div>
+                                <div class="trim-track-area" id="trim-track-area">
+                                    <div class="trim-playhead" id="trim-playhead"></div>
+                                    <div class="trim-waveform-wrap" id="trim-waveform-wrap">
+                                        <img id="trim-waveform-img" class="trim-waveform-img" alt="" />
+                                    </div>
+                                    <div class="trim-timeline-track" id="trim-track">
+                                        <div class="trim-timeline-inactive" id="trim-inactive-start"></div>
+                                        <div class="trim-range-handles" id="trim-range-handles">
+                                            <div class="trim-handle trim-handle-left" id="trim-handle-left"
+                                                title="Drag to set start"></div>
+                                            <div class="trim-timeline-active" id="trim-active-segment"></div>
+                                            <div class="trim-handle trim-handle-right" id="trim-handle-right"
+                                                title="Drag to set end"></div>
+                                        </div>
+                                        <div class="trim-timeline-inactive" id="trim-inactive-end"></div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="trim-range-inputs">
@@ -790,7 +759,7 @@
                             </div>
                         </div>
 
-                        <div class="settings-tabs">
+                        <div class="settings-tabs tab-btn-group">
                             <button class="tab-btn active" data-tab="video">Video</button>
                             <button class="tab-btn" data-tab="audio">Audio</button>
                             <button class="tab-btn" data-tab="subtitles">Subtitles</button>
@@ -864,10 +833,12 @@
                                 <label>Content Rate Control</label>
                                 <div class="radio-group">
                                     <label class="radio-label">
-                                        <input type="radio" name="rate-mode" value="crf" checked> Quality (CRF)
+                                        <input type="radio" name="rate-mode" value="crf" checked>
+                                        <span>Quality (CRF)</span>
                                     </label>
                                     <label class="radio-label">
-                                        <input type="radio" name="rate-mode" value="bitrate"> Avg Bitrate (kbps)
+                                        <input type="radio" name="rate-mode" value="bitrate">
+                                        <span>Avg Bitrate (kbps)</span>
                                     </label>
                                 </div>
 

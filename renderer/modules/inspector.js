@@ -4,6 +4,24 @@ import { get, getLoaderHTML, showPopup, formatBytes, formatDurationFromSeconds }
 import { showView } from './ui-utils.js';
 
 let currentInspectorFilePath = null;
+let currentInspectorData = null;
+let inspectorRawToggleBound = false;
+
+function setupInspectorRawJsonToggle() {
+    if (inspectorRawToggleBound) return;
+
+    const rawToggle = document.querySelector('.inspector-raw-toggle');
+    if (!rawToggle) return;
+
+    inspectorRawToggleBound = true;
+    rawToggle.addEventListener('toggle', () => {
+        if (!rawToggle.open || !currentInspectorData) return;
+        const inspectorContent = get('inspector-content');
+        if (inspectorContent) {
+            inspectorContent.textContent = JSON.stringify(currentInspectorData, null, 2);
+        }
+    });
+}
 
 function renderStreamInfo(streams) {
     const inspectorStreams = get('inspector-streams');
@@ -98,8 +116,10 @@ export async function loadInspectorFile(filePath) {
     const inspectorContent = get('inspector-content');
     const inspectorStreams = get('inspector-streams');
     const inspectorView = get('inspector-view');
+    const rawToggle = document.querySelector('.inspector-raw-toggle');
     
     currentInspectorFilePath = filePath;
+    currentInspectorData = null;
     showView(inspectorView);
 
     const filename = filePath.split(/[\\/]/).pop();
@@ -118,8 +138,11 @@ export async function loadInspectorFile(filePath) {
             return;
         }
 
+        currentInspectorData = data;
         populateMetadataFields(data);
-        if (inspectorContent) inspectorContent.textContent = JSON.stringify(data, null, 2);
+        if (rawToggle && rawToggle.open && inspectorContent) {
+            inspectorContent.textContent = JSON.stringify(data, null, 2);
+        }
 
     } catch (e) {
         console.error('Error loading metadata:', e);
@@ -131,6 +154,8 @@ export function setupInspectorHandlers() {
     const inspectorDropZone = get('inspector-drop-zone');
     const inspectorBackBtn = get('inspector-back-btn');
     const inspectorSaveBtn = get('inspector-save-btn');
+
+    setupInspectorRawJsonToggle();
     
     if (inspectorDropZone) {
         inspectorDropZone.addEventListener('click', async () => {

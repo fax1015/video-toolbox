@@ -388,12 +388,16 @@ function createWindow() {
     ipcMain.handle('get-metadata-full', async (event, filePath) => {
         return new Promise((resolve, reject) => {
             // Use FFPROBE_PATH for proper JSON metadata output
-            const ffprobe = spawn(FFPROBE_PATH, [
+            const ffprobeArgs = [
+                '-v', 'error',
                 '-print_format', 'json',
+                '-show_entries',
+                'format=format_name,duration,size,bit_rate:format_tags=title,artist,album,date,genre,track,comment:stream=codec_type,codec_name,width,height,r_frame_rate,bit_rate,pix_fmt,sample_rate,channels,channel_layout:stream_tags=language',
                 '-show_format',
                 '-show_streams',
                 '-i', filePath
-            ]);
+            ];
+            const ffprobe = spawn(FFPROBE_PATH, ffprobeArgs);
 
             let output = '';
             let errorOutput = '';
@@ -515,11 +519,40 @@ function createWindow() {
         });
     });
 
-    ipcMain.handle('get-audio-waveform', async (event, filePath) => {
+    ipcMain.handle('get-audio-waveform', async (event, payload) => {
         return new Promise((resolve) => {
+            const options = typeof payload === 'string'
+                ? { filePath: payload }
+                : (payload || {});
+            const filePath = options.filePath;
+            const mode = options.mode || 'waveform';
+            const width = parseInt(options.width, 10) || 800;
+            const height = parseInt(options.height, 10) || 120;
+            const palette = options.palette || 'heatmap';
+            const paletteColor = (options.paletteColor || '63f1af').replace('#', '');
+
+            if (!filePath) {
+                resolve(null);
+                return;
+            }
+
+            let filter = '';
+            if (mode === 'spectrogram') {
+                filter = `[0:a]showspectrumpic=s=${width}x${height}:legend=0:color=rainbow:scale=log`;
+            } else if (palette === 'heatmap') {
+                filter = `[0:a]aformat=channel_layouts=mono,showwavespic=s=${width}x${height}:colors=white:scale=log,format=gray,` +
+                    `lutrgb=r='if(lte(val,128),0,2*(val-128))':` +
+                    `g='if(lte(val,128),2*val,255-2*(val-128))':` +
+                    `b='if(lte(val,128),255-2*val,0)'`;
+            } else if (palette === 'accent') {
+                filter = `[0:a]aformat=channel_layouts=mono,showwavespic=s=${width}x${height}:colors=0x${paletteColor}:scale=log`;
+            } else {
+                filter = `[0:a]aformat=channel_layouts=mono,showwavespic=s=${width}x${height}:colors=white:scale=log`;
+            }
+
             const args = [
                 '-y', '-i', filePath,
-                '-filter_complex', '[0:a]aformat=channel_layouts=mono,showwavespic=s=800x60:colors=0x63f1af',
+                '-filter_complex', filter,
                 '-frames:v', '1', '-f', 'image2', 'pipe:1'
             ];
             const ffmpeg = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -542,9 +575,40 @@ function createWindow() {
         if (!duration) return null;
 
         return new Promise((resolve) => {
+            let fileSizeMB = 0;
+            try {
+                const stats = fs.statSync(filePath);
+                fileSizeMB = stats.size / (1024 * 1024);
+            } catch (err) {
+                fileSizeMB = 0;
+            }
+
+            let targetHeight = 240;
+            let quality = 2;
+            let maxCount = 300;
+
+            if (fileSizeMB > 600) {
+                targetHeight = 160;
+                quality = 6;
+                maxCount = 80;
+            } else if (fileSizeMB > 300) {
+                targetHeight = 180;
+                quality = 5;
+                maxCount = 100;
+            } else if (fileSizeMB > 120) {
+                targetHeight = 200;
+                quality = 4;
+                maxCount = 140;
+            } else if (fileSizeMB > 40) {
+                targetHeight = 220;
+                quality = 3;
+                maxCount = 180;
+            }
+
             // Target roughly 240px height for quality (approx 240x135 for 16:9)
             // Use Grid Layout to avoid texture width limits (~16384px)
-            const safeCount = Math.min(count, 300);
+            const desiredCount = Math.min(count, maxCount);
+            const safeCount = Math.min(desiredCount, 300);
             const fps = (safeCount + 2) / duration;
 
             // Grid Layout: 10 columns wide
@@ -556,13 +620,13 @@ function createWindow() {
             const tileLayout = `${cols}x${rows}`;
 
             // Scale to 240px height, keep aspect ratio
-            const vf = `fps=${fps},scale=-1:240,tile=${tileLayout}`;
+            const vf = `fps=${fps},scale=-1:${targetHeight},tile=${tileLayout}`;
 
             const args = [
                 '-y', '-i', filePath,
                 '-vf', vf,
                 '-frames:v', '1',
-                '-q:v', '2', // High Quality (2-5 is good range, 2 is very high)
+                '-q:v', String(quality), // Lower quality for large files
                 '-f', 'image2',
                 'pipe:1'
             ];
@@ -1117,7 +1181,7 @@ function createWindow() {
      */
     function parseDownloadProgress(line, event, currentDownloadPath) {
         const str = line.trim();
-        if (!str) return;
+        if (!str) return currentDownloadPath;
         console.log('yt-dlp stdout:', str);
 
         // Parse progress - handle more variations (including ~ estimated size)
@@ -1169,6 +1233,8 @@ function createWindow() {
         } else if (status) {
             event.reply('download-progress', { status: status });
         }
+
+        return currentDownloadPath;
     }
 
     function formatDuration(seconds) {
@@ -1219,8 +1285,9 @@ function createWindow() {
 
             // Output template - use safe filename from user input
             let outputTemplate;
+            let safeFileName = null;
             if (options.fileName) {
-                const safeFileName = getSafeFileName(options.fileName);
+                safeFileName = getSafeFileName(options.fileName);
                 outputTemplate = path.join(validatedFolder, safeFileName + '.%(ext)s');
             } else {
                 outputTemplate = path.join(validatedFolder, '%(title)s.%(ext)s');
@@ -1332,7 +1399,8 @@ function createWindow() {
                 stdoutBuffer = lines.pop();
 
                 for (const line of lines) {
-                    parseDownloadProgress(line, event, currentDownloadPath);
+                    const updatedPath = parseDownloadProgress(line, event, currentDownloadPath);
+                    if (updatedPath) currentDownloadPath = updatedPath;
                 }
             });
 
@@ -1414,11 +1482,18 @@ function createWindow() {
                                 if (fs.existsSync(dir)) {
                                     const files = fs.readdirSync(dir);
                                     files.forEach(f => {
-                                        if (f.startsWith(filename) && (f.endsWith('.part') || f.endsWith('.temp') || f.endsWith('.ytdl'))) {
+                                        if (f.startsWith(filename) && (f.endsWith('.part') || f.endsWith('.temp') || f.endsWith('.ytdl') || /\.f\d+$/.test(f))) {
                                             try { fs.unlinkSync(path.join(dir, f)); } catch (e) { }
                                         }
                                     });
                                 }
+                            } else if (safeFileName && fs.existsSync(outputFolder)) {
+                                const files = fs.readdirSync(outputFolder);
+                                files.forEach(f => {
+                                    if (f.startsWith(safeFileName) && (f.endsWith('.part') || f.endsWith('.temp') || f.endsWith('.ytdl') || /\.f\d+$/.test(f))) {
+                                        try { fs.unlinkSync(path.join(outputFolder, f)); } catch (e) { }
+                                    }
+                                });
                             }
                         } catch (e) { console.error(e); }
                     }, 1000);

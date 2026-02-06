@@ -60,7 +60,7 @@ export const TOOL_REGISTRY = [
         id: 'converter',
         name: 'Video Converter',
         description: 'Convert videos to different formats with custom settings.',
-        icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line><polyline points="2 7 7 2 12 7"></polyline><polyline points="12 17 17 22 22 17"></polyline></svg>`,
+        icon: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="7" height="9" rx="1"></rect><rect x="15" y="12" width="7" height="9" rx="1"></rect><path d="M9 8h6"></path><path d="M13 6l2 2-2 2"></path><path d="M15 16H9"></path><path d="M11 14l-2 2 2 2"></path></svg>`,
         viewId: 'drop-zone',
         navId: 'nav-video',
         action: 'view'

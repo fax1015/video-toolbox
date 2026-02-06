@@ -186,6 +186,159 @@ let trimDragInitialEnd = 0;
 let isDraggingPlayhead = false;
 let playheadDragRaf = null;
 let finalSeekOnMouseUp = null;
+let waveformMode = 'waveform';
+const waveformOptions = {
+    width: 800,
+    height: 100,
+    palette: 'accent'
+};
+const waveformCache = new Map();
+let trimLoadingTimeout = null;
+let trimLoadingToken = 0;
+const TRIM_LOADING_MAX_MS = 6000;
+
+function startTrimLoading() {
+    trimLoadingToken += 1;
+    const token = trimLoadingToken;
+    const trimLoading = get('trim-loading');
+    const trimDashboard = get('trim-dashboard');
+    if (trimLoading) trimLoading.classList.remove('hidden');
+    if (trimDashboard) trimDashboard.classList.add('trim-loading-active');
+    if (trimLoadingTimeout) clearTimeout(trimLoadingTimeout);
+    trimLoadingTimeout = setTimeout(() => {
+        endTrimLoading(token);
+    }, TRIM_LOADING_MAX_MS);
+    return token;
+}
+
+function endTrimLoading(token) {
+    if (token !== trimLoadingToken) return;
+    const trimLoading = get('trim-loading');
+    const trimDashboard = get('trim-dashboard');
+    if (trimLoading) trimLoading.classList.add('hidden');
+    if (trimDashboard) trimDashboard.classList.remove('trim-loading-active');
+    if (trimLoadingTimeout) {
+        clearTimeout(trimLoadingTimeout);
+        trimLoadingTimeout = null;
+    }
+}
+
+function updateWaveformModeUI() {
+    const waveBtn = get('trim-waveform-mode-waveform');
+    const specBtn = get('trim-waveform-mode-spectrogram');
+    if (waveBtn) waveBtn.classList.toggle('active', waveformMode === 'waveform');
+    if (specBtn) specBtn.classList.toggle('active', waveformMode === 'spectrogram');
+}
+
+function normalizeHexColor(color) {
+    if (!color || typeof color !== 'string') return '63f1af';
+    const trimmed = color.trim();
+    if (trimmed.startsWith('#')) {
+        const hex = trimmed.slice(1);
+        if (hex.length === 3) {
+            return hex.split('').map((c) => c + c).join('');
+        }
+        if (hex.length === 6) return hex;
+    }
+    const match = trimmed.match(/rgba?\(([^)]+)\)/i);
+    if (match) {
+        const parts = match[1].split(',').map((p) => parseFloat(p.trim()));
+        if (parts.length >= 3) {
+            const [r, g, b] = parts;
+            if ([r, g, b].every((v) => Number.isFinite(v))) {
+                return [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+            }
+        }
+    }
+    return '63f1af';
+}
+
+function getAccentHex() {
+    const accent = getComputedStyle(document.body).getPropertyValue('--accent-primary');
+    return normalizeHexColor(accent);
+}
+
+function getWaveformCacheKey(filePath, mode, palette, width, height, accentHex) {
+    return `${filePath}|${mode}|${palette}|${width}x${height}|${accentHex}`;
+}
+
+async function loadTrimWaveform(filePath) {
+    const trimWaveformWrap = get('trim-waveform-wrap');
+    const trimWaveformImg = get('trim-waveform-img');
+    if (!trimWaveformWrap || !trimWaveformImg || !filePath) return;
+
+    const requestMode = waveformMode;
+    const accentHex = getAccentHex();
+    const cacheKey = getWaveformCacheKey(
+        filePath,
+        requestMode,
+        waveformOptions.palette,
+        waveformOptions.width,
+        waveformOptions.height,
+        accentHex
+    );
+    trimWaveformWrap.dataset.mode = requestMode;
+    trimWaveformWrap.classList.remove('has-waveform');
+    trimWaveformImg.removeAttribute('src');
+
+    const cached = waveformCache.get(cacheKey);
+    if (cached) {
+        trimWaveformImg.src = 'data:image/png;base64,' + cached;
+        trimWaveformWrap.classList.add('has-waveform');
+        return;
+    }
+
+    try {
+        const waveformBase64 = await window.electron.getAudioWaveform({
+            filePath,
+            mode: requestMode,
+            width: waveformOptions.width,
+            height: waveformOptions.height,
+            palette: waveformOptions.palette,
+            paletteColor: accentHex
+        });
+
+        if (waveformBase64 && state.trimFilePath === filePath && waveformMode === requestMode) {
+            waveformCache.set(cacheKey, waveformBase64);
+            trimWaveformImg.src = 'data:image/png;base64,' + waveformBase64;
+            trimWaveformWrap.classList.add('has-waveform');
+        }
+    } catch (e) {
+        // Ignore waveform failures (no audio or unsupported format)
+    }
+}
+
+async function preloadTrimWaveforms(filePath) {
+    if (!filePath) return;
+    const accentHex = getAccentHex();
+    const modes = ['waveform', 'spectrogram'];
+    await Promise.all(modes.map(async (mode) => {
+        const cacheKey = getWaveformCacheKey(
+            filePath,
+            mode,
+            waveformOptions.palette,
+            waveformOptions.width,
+            waveformOptions.height,
+            accentHex
+        );
+        if (waveformCache.has(cacheKey)) return;
+        try {
+            const waveformBase64 = await window.electron.getAudioWaveform({
+                filePath,
+                mode,
+                width: waveformOptions.width,
+                height: waveformOptions.height,
+                palette: waveformOptions.palette,
+                paletteColor: accentHex
+            });
+            if (waveformBase64 && state.trimFilePath === filePath) {
+                waveformCache.set(cacheKey, waveformBase64);
+            }
+        } catch (e) {
+            // Ignore preload failures
+        }
+    }));
+}
 
 async function resolveBitrateKbps(filePath, metadata) {
     const parsed = parseFloat(metadata?.bitrate) || 0;
@@ -331,6 +484,7 @@ export async function handleTrimFileSelection(filePath) {
     const videoPreviewContainer = get('video-preview-container');
     const videoCurrentTime = get('video-current-time');
     const trimPlayhead = get('trim-playhead');
+    const loadingToken = startTrimLoading();
     
     // Preserve bitrate if same file is being reloaded
     const previousBitrate = (filePath === state.trimFilePath) ? state.originalFileBitrate : 0;
@@ -389,16 +543,12 @@ export async function handleTrimFileSelection(filePath) {
         updateTrimTimelineVisual();
         syncTrimInputsFromVisual();
         
-        try {
-            const waveformBase64 = await window.electron.getAudioWaveform(filePath);
-            if (waveformBase64 && trimWaveformImg && trimWaveformWrap) {
-                trimWaveformImg.src = 'data:image/png;base64,' + waveformBase64;
-                trimWaveformWrap.classList.add('has-waveform');
-            }
-        } catch (e) { /* no waveform if no audio */ }
+        await loadTrimWaveform(filePath);
+        preloadTrimWaveforms(filePath);
     } catch (e) {
         if (trimFileDuration) trimFileDuration.textContent = 'Unknown';
         state.setTrimTime(0, 0, 0);
+        endTrimLoading(loadingToken);
     }
 
     // Generate thumbnails
@@ -420,10 +570,14 @@ export async function handleTrimFileSelection(filePath) {
                     scrubPreview.style.backgroundRepeat = 'no-repeat';
                 }
             }
+            endTrimLoading(loadingToken);
         }).catch(e => {
             console.error('Thumbnail generation failed:', e);
             thumbnailCache.clear();
+            endTrimLoading(loadingToken);
         });
+    } else {
+        endTrimLoading(loadingToken);
     }
 }
 
@@ -444,6 +598,8 @@ export function setupTrimmerHandlers() {
     const trimMuteBtn = get('trim-mute-btn');
     const trimVolumeSlider = get('trim-volume-slider');
     const navTrim = get('nav-trim');
+    const trimWaveformModeWave = get('trim-waveform-mode-waveform');
+    const trimWaveformModeSpectrogram = get('trim-waveform-mode-spectrogram');
 
     if (trimDropZone) {
         trimDropZone.addEventListener('dragover', (e) => { e.preventDefault(); trimDropZone.classList.add('drag-over'); });
@@ -478,6 +634,24 @@ export function setupTrimmerHandlers() {
             resetNav();
             if (navTrim) navTrim.classList.add('active');
         });
+    }
+
+    updateWaveformModeUI();
+
+    function setWaveformMode(mode) {
+        if (mode !== 'waveform' && mode !== 'spectrogram') return;
+        if (waveformMode === mode) return;
+        waveformMode = mode;
+        updateWaveformModeUI();
+        if (state.trimFilePath) loadTrimWaveform(state.trimFilePath);
+    }
+
+    if (trimWaveformModeWave) {
+        trimWaveformModeWave.addEventListener('click', () => setWaveformMode('waveform'));
+    }
+
+    if (trimWaveformModeSpectrogram) {
+        trimWaveformModeSpectrogram.addEventListener('click', () => setWaveformMode('spectrogram'));
     }
 
     if (trimStartInput) {
@@ -591,6 +765,7 @@ export function setupTrimmerHandlers() {
 
 function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline, playhead, videoPreview) {
     const trimTrack = get('trim-track');
+    const videoCurrentTime = get('video-current-time');
     // Use module-level variables instead of redeclaring (fixes scope bug)
     isDraggingPlayhead = false;
     playheadDragRaf = null;
@@ -613,6 +788,11 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
         let pct = (clientX - rect.left) / rect.width;
         pct = Math.max(0, Math.min(1, pct));
         return pct * state.trimDurationSeconds;
+    }
+
+    function updatePreviewTime(time) {
+        if (!videoCurrentTime) return;
+        updateTextContent(videoCurrentTime, formatDisplayTime(time));
     }
 
     function onTrimDragMove(e) {
@@ -655,6 +835,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                 const pct = (targetTime / state.trimDurationSeconds) * 100;
                 if (playhead) playhead.style.left = pct + '%';
                 smartSeeker.seek(videoPreview, targetTime);
+                updatePreviewTime(targetTime);
             }
         }
     }
@@ -684,6 +865,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                     playhead.style.left = pct + '%';
                 }
                 smartSeeker.seek(videoPreview, time);
+                updatePreviewTime(time);
             }
             playheadDragRaf = null;
         });
@@ -763,7 +945,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
     }
     if (timeline && playhead && videoPreview) {
         timeline.addEventListener(downEvent, (e) => {
-            if (e.target.closest('.trim-handle') || e.target.closest('.trim-active-segment')) return;
+            if (e.target.closest('.trim-handle') || e.target.closest('.trim-active-segment') || e.target.closest('.trim-waveform-toolbar')) return;
             e.preventDefault();
             isDraggingPlayhead = true;
             const time = getTimelineTime(e.clientX);
@@ -773,6 +955,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                     playhead.style.left = pct + '%';
                 }
                 smartSeeker.seek(videoPreview, time);
+                updatePreviewTime(time);
                 finalSeekOnMouseUp = e.clientX;
             }
 
@@ -790,6 +973,7 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
     const videoOverlay = get('video-overlay');
     const playIconShape = get('play-icon-shape');
     const pauseIconShape = get('pause-icon-shape');
+    let lastVolume = 1;
 
     function showPlayPauseAnimation(isPlaying) {
         if (!videoOverlay || !playIconShape || !pauseIconShape) return;
@@ -810,11 +994,44 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
         playhead.style.left = pct + '%';
     }
 
+    function updateCurrentTime() {
+        if (!videoCurrentTime || !videoPreview) return;
+        const time = isFinite(videoPreview.currentTime) ? videoPreview.currentTime : 0;
+        updateTextContent(videoCurrentTime, formatDisplayTime(time));
+    }
+
     function updateMuteIcon() {
         if (!volumeIcon || !mutedIcon || !videoPreview) return;
         const isMuted = videoPreview.muted || videoPreview.volume === 0;
         volumeIcon.classList.toggle('hidden', isMuted);
         mutedIcon.classList.toggle('hidden', !isMuted);
+    }
+
+    function updateVolumeSliderBackground() {
+        if (!volumeSlider) return;
+        const value = (volumeSlider.value - volumeSlider.min) / (volumeSlider.max - volumeSlider.min) * 100;
+        volumeSlider.style.background = `linear-gradient(to right, var(--accent-primary) ${value}%, rgba(255, 255, 255, 0.2) ${value}%)`;
+    }
+
+    function applyVolume(value, shouldMute) {
+        if (!videoPreview) return;
+        const normalized = Math.max(0, Math.min(1, value));
+        videoPreview.volume = normalized;
+        videoPreview.muted = !!shouldMute || normalized === 0;
+        if (volumeSlider) volumeSlider.value = normalized.toString();
+        updateMuteIcon();
+        updateVolumeSliderBackground();
+    }
+
+    function toggleMuteFromIcon() {
+        if (!videoPreview) return;
+        const isMuted = videoPreview.muted || videoPreview.volume === 0;
+        if (isMuted) {
+            applyVolume(lastVolume > 0 ? lastVolume : 1, false);
+        } else {
+            lastVolume = videoPreview.volume > 0 ? videoPreview.volume : lastVolume;
+            applyVolume(0, true);
+        }
     }
 
     if (container) {
@@ -834,39 +1051,46 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
     if (videoPreview) {
         videoPreview.addEventListener('timeupdate', () => {
             updatePlayhead();
+            updateCurrentTime();
         });
         videoPreview.addEventListener('seeked', () => {
             smartSeeker.onSeeked(videoPreview);
+            updateCurrentTime();
         });
         videoPreview.addEventListener('ended', () => {
             videoPreview.currentTime = state.trimStartSeconds;
             updatePlayhead();
+            updateCurrentTime();
         });
-    }
-
-    function updateVolumeSliderBackground() {
-        if (!volumeSlider) return;
-        const value = (volumeSlider.value - volumeSlider.min) / (volumeSlider.max - volumeSlider.min) * 100;
-        volumeSlider.style.background = `linear-gradient(to right, var(--accent-primary) ${value}%, rgba(255, 255, 255, 0.2) ${value}%)`;
     }
 
     if (volumeSlider && videoPreview) {
         updateVolumeSliderBackground();
         volumeSlider.addEventListener('input', () => {
-            videoPreview.volume = parseFloat(volumeSlider.value);
-            if (videoPreview.volume > 0 && videoPreview.muted) {
-                videoPreview.muted = false;
-                updateMuteIcon();
-            }
-            updateVolumeSliderBackground();
+            const nextVolume = parseFloat(volumeSlider.value);
+            if (nextVolume > 0) lastVolume = nextVolume;
+            applyVolume(nextVolume, false);
         });
     }
 
     if (muteBtn && videoPreview) {
         muteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            videoPreview.muted = !videoPreview.muted;
-            updateMuteIcon();
+            toggleMuteFromIcon();
+        });
+    }
+
+    if (volumeIcon) {
+        volumeIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleMuteFromIcon();
+        });
+    }
+
+    if (mutedIcon) {
+        mutedIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleMuteFromIcon();
         });
     }
 }
