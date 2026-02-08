@@ -45,7 +45,7 @@ export function showPopup(message) {
     const popupOverlay = get('popup-overlay');
     const popupMessage = get('popup-message');
     const popupButtons = get('popup-actions');
-    
+
     return new Promise((resolve) => {
         popupMessage.textContent = message;
         popupButtons.innerHTML = '<button id="popup-ok-btn" class="primary-btn popup-btn">OK</button>';
@@ -63,7 +63,7 @@ export function showConfirm(message) {
     const popupOverlay = get('popup-overlay');
     const popupMessage = get('popup-message');
     const popupButtons = get('popup-actions');
-    
+
     return new Promise((resolve) => {
         popupMessage.textContent = message;
         popupButtons.innerHTML = `
@@ -87,7 +87,7 @@ export function showPlaylistConfirm(title, count) {
     const popupOverlay = get('popup-overlay');
     const popupMessage = get('popup-message');
     const popupButtons = get('popup-actions');
-    
+
     return new Promise((resolve) => {
         popupMessage.innerHTML = `Found Playlist: <strong>${title}</strong><br>(${count} videos)<br><br>How would you like to download?`;
         popupButtons.innerHTML = `
@@ -289,16 +289,17 @@ export function showView(view) {
 
     const trimVideoPreview = get('trim-video-preview');
     const trimDashboard = get('trim-dashboard');
-    
+
     if (trimVideoPreview && !trimVideoPreview.paused && view !== trimDashboard) {
         trimVideoPreview.pause();
     }
 
     const allViews = [
         'drop-zone', 'folder-drop-zone', 'extract-audio-drop-zone', 'extract-audio-dashboard',
-        'trim-drop-zone', 'trim-dashboard', 'file-dashboard', 'progress-view', 'complete-view',
-        'settings-view', 'queue-view', 'apps-dashboard', 'inspector-view', 'inspector-drop-zone',
-        'downloader-dashboard', 'dl-options-dashboard', 'dl-progress-view', 'dl-complete-view'
+        'image-to-pdf-drop-zone', 'image-to-pdf-dashboard', 'trim-drop-zone', 'trim-dashboard',
+        'file-dashboard', 'progress-view', 'complete-view', 'settings-view', 'queue-view',
+        'apps-dashboard', 'inspector-view', 'inspector-drop-zone', 'downloader-dashboard',
+        'dl-options-dashboard', 'dl-progress-view', 'dl-complete-view'
     ];
 
     allViews.forEach(id => {
@@ -308,7 +309,7 @@ export function showView(view) {
             v.classList.remove('container-loaded');
         }
     });
-    
+
     view.classList.remove('hidden');
     void view.offsetWidth;
     view.classList.add('container-loaded');
@@ -362,14 +363,17 @@ export function animateAutoHeight(container, changeFn, options = {}) {
         container.__heightTweenHandler = null;
     }
 
-    const transitionValue = `height ${duration}ms ${easing}`;
-    container.style.willChange = 'height';
-    container.style.height = `${startHeight}px`;
-    container.style.overflow = 'hidden';
-    container.style.transition = transitionValue;
-
-    void container.offsetHeight;
+    // Set height to auto to measure the end state
+    container.style.transition = 'none';
+    container.style.height = 'auto';
     changeFn();
+    const endHeight = container.getBoundingClientRect().height;
+
+    // Reset to start height
+    container.style.height = `${startHeight}px`;
+
+    // Force reflow
+    void container.offsetHeight;
 
     const cleanup = (event) => {
         if (event && event.propertyName !== 'height') return;
@@ -384,19 +388,14 @@ export function animateAutoHeight(container, changeFn, options = {}) {
     container.__heightTweenHandler = cleanup;
     container.addEventListener('transitionend', cleanup);
 
-    const previousTransition = container.style.transition;
-    container.style.transition = 'none';
-    container.style.height = 'auto';
-    const endHeight = container.getBoundingClientRect().height;
-    container.style.height = `${startHeight}px`;
-    void container.offsetHeight;
-    container.style.transition = previousTransition;
-
     requestAnimationFrame(() => {
         if (Math.abs(endHeight - startHeight) < 1) {
             cleanup();
             return;
         }
+        container.style.transition = `height ${duration}ms ${easing}`;
+        container.style.overflow = 'hidden';
+        container.style.willChange = 'height';
         container.style.height = `${endHeight}px`;
     });
 }
@@ -418,7 +417,7 @@ export function resetProgress() {
     const timeElapsed = get('time-elapsed');
     const timePosition = get('time-position');
     const encodeSpeed = get('encode-speed');
-    
+
     if (progressPercent) progressPercent.textContent = '0%';
     if (progressRing) progressRing.style.strokeDashoffset = 502;
     if (timeElapsed) timeElapsed.textContent = '00:00:00';
@@ -527,7 +526,7 @@ export function renderAudioTracks(audioTracks) {
     const audioTrackList = get('audio-track-list');
     const audioSelect = get('audio-select');
     const audioBitrateSelect = get('audio-bitrate');
-    
+
     if (!audioTrackList) return;
 
     if (audioTracks.length === 0) {
@@ -563,7 +562,7 @@ export function renderAudioTracks(audioTracks) {
 export function renderSubtitleTracks(subtitleTracks) {
     const subtitleTrackList = get('subtitle-track-list');
     if (!subtitleTrackList) return;
-    
+
     subtitleTrackList.innerHTML = subtitleTracks.map((track, index) => `
         <div class="track-item">
             <div class="track-item-info">

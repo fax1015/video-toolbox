@@ -15,6 +15,8 @@ app.commandLine.appendSwitch('disable-background-timer-throttling');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const PDFDocument = require('pdfkit');
+const sizeOf = require('image-size');
 
 // Application Constants
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -262,6 +264,35 @@ function createWindow() {
         return canceled ? null : filePaths[0];
     });
 
+    ipcMain.handle('select-files', async (event, options = {}) => {
+        const dialogOptions = {
+            properties: ['openFile', 'multiSelections', 'dontAddToRecent']
+        };
+
+        if (Array.isArray(options.filters) && options.filters.length > 0) {
+            dialogOptions.filters = options.filters;
+        } else if (!options.allowAll) {
+            dialogOptions.filters = [{ name: 'Videos', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'wmv'] }];
+        }
+
+        const { canceled, filePaths } = await dialog.showOpenDialog(win, dialogOptions);
+        return canceled ? [] : filePaths;
+    });
+
+    ipcMain.handle('save-file', async (event, options = {}) => {
+        const dialogOptions = {
+            title: options.title || 'Save File',
+            defaultPath: options.defaultPath || undefined
+        };
+
+        if (Array.isArray(options.filters) && options.filters.length > 0) {
+            dialogOptions.filters = options.filters;
+        }
+
+        const { canceled, filePath } = await dialog.showSaveDialog(win, dialogOptions);
+        return canceled ? null : filePath;
+    });
+
     ipcMain.handle('select-folder', async () => {
         const { canceled, filePaths } = await dialog.showOpenDialog(win, {
             properties: ['openDirectory', 'dontAddToRecent']
@@ -450,6 +481,72 @@ function createWindow() {
                     console.error('Raw output:', output);
                     console.error('Stderr:', errorOutput);
                     resolve({ error: `Failed to parse metadata: ${e.message}` });
+                }
+            });
+        });
+    });
+
+    ipcMain.handle('get-image-info', async (event, filePath) => {
+        const validatedPath = validateAndNormalizePath(filePath);
+        if (!validatedPath) {
+            return { success: false, error: 'Invalid file path' };
+        }
+
+        return new Promise((resolve) => {
+            const args = [
+                '-v', 'error',
+                '-print_format', 'json',
+                '-show_entries',
+                'format=format_name,size:stream=codec_name,width,height,pix_fmt,color_space,color_primaries,bits_per_raw_sample,bits_per_sample',
+                '-i', validatedPath
+            ];
+
+            const ffprobe = spawn(FFPROBE_PATH, args);
+            let output = '';
+            let errorOutput = '';
+
+            ffprobe.stdout.on('data', (data) => {
+                output += data.toString();
+            });
+
+            ffprobe.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+            });
+
+            ffprobe.on('close', (code) => {
+                if (code !== 0) {
+                    resolve({ success: false, error: errorOutput || 'ffprobe failed' });
+                    return;
+                }
+
+                try {
+                    const data = JSON.parse(output);
+                    const stream = Array.isArray(data.streams) ? data.streams[0] : null;
+                    const format = data.format || {};
+                    const sizeBytes = format.size ? Number.parseInt(format.size, 10) : 0;
+                    const rawBits = stream?.bits_per_raw_sample || stream?.bits_per_sample || '';
+                    let mtimeMs = 0;
+                    try {
+                        const stats = fs.statSync(validatedPath);
+                        mtimeMs = stats.mtimeMs;
+                    } catch (e) { }
+
+                    resolve({
+                        success: true,
+                        info: {
+                            width: stream?.width || 0,
+                            height: stream?.height || 0,
+                            codec: stream?.codec_name || '',
+                            pixelFormat: stream?.pix_fmt || '',
+                            colorSpace: stream?.color_space || stream?.color_primaries || '',
+                            bitDepth: rawBits ? String(rawBits) : '',
+                            format: format.format_name || '',
+                            sizeBytes: Number.isNaN(sizeBytes) ? 0 : sizeBytes,
+                            mtimeMs: mtimeMs
+                        }
+                    });
+                } catch (err) {
+                    resolve({ success: false, error: 'Failed to parse ffprobe output' });
                 }
             });
         });
@@ -1003,6 +1100,139 @@ function createWindow() {
                 event.reply('encode-error', { message: `FFmpeg exited with code ${code}` });
             }
         });
+    });
+
+    ipcMain.handle('convert-images-to-pdf', async (event, options = {}) => {
+        const imagePaths = Array.isArray(options.imagePaths) ? options.imagePaths : [];
+        const outputPath = options.outputPath;
+        const quality = options.quality !== undefined ? options.quality : 80;
+
+        if (imagePaths.length === 0) {
+            return { success: false, error: 'No images provided.' };
+        }
+
+        const validatedOutput = validateAndNormalizePath(outputPath);
+        if (!validatedOutput) {
+            return { success: false, error: 'Invalid output path.' };
+        }
+
+        const validatedImages = imagePaths.map((imgPath) => validateAndNormalizePath(imgPath)).filter(Boolean);
+        if (validatedImages.length !== imagePaths.length) {
+            return { success: false, error: 'One or more image paths are invalid.' };
+        }
+
+        const tempFiles = [];
+        const tempDir = app.getPath('temp');
+
+        try {
+            const processedImages = await Promise.all(validatedImages.map(async (imagePath, index) => {
+                // If quality is less than 100, re-encode to temporary JPEG
+                if (quality < 100) {
+                    // Use a more unique temp name to avoid conflicts if multiple conversions run
+                    const tempPath = path.join(tempDir, `vt_pdf_img_${process.pid}_${Date.now()}_${index}.jpg`);
+                    tempFiles.push(tempPath);
+
+                    await new Promise((resolve, reject) => {
+                        // FFmpeg jpeg quality scale is 1 (best) to 31 (worst)
+                        const qValue = Math.max(1, Math.min(31, Math.round(((100 - quality) / 100) * 30 + 1)));
+                        const proc = spawn(FFMPEG_PATH, [
+                            '-y', '-v', 'error',
+                            '-i', imagePath,
+                            '-q:v', qValue.toString(),
+                            tempPath
+                        ]);
+                        proc.on('close', (code) => {
+                            if (code === 0) resolve();
+                            else reject(new Error(`FFmpeg image re-encode failed for ${imagePath}`));
+                        });
+                        proc.on('error', reject);
+                    });
+
+                    return tempPath;
+                }
+                return imagePath;
+            }));
+
+            return new Promise((resolve) => {
+                const doc = new PDFDocument({ autoFirstPage: false });
+                const outputStream = fs.createWriteStream(validatedOutput);
+
+                outputStream.on('finish', () => {
+                    // Cleanup temp files on success
+                    tempFiles.forEach(f => {
+                        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { }
+                    });
+                    resolve({ success: true, outputPath: validatedOutput });
+                });
+
+                outputStream.on('error', (err) => {
+                    // Cleanup temp files on stream error
+                    tempFiles.forEach(f => {
+                        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { }
+                    });
+                    resolve({ success: false, error: err.message });
+                });
+
+                doc.pipe(outputStream);
+
+                try {
+                    let maxWidth = 0;
+                    let maxHeight = 0;
+
+                    if (options.upscale) {
+                        processedImages.forEach((imagePath) => {
+                            try {
+                                const dim = sizeOf(imagePath);
+                                if (dim.width > maxWidth) maxWidth = dim.width;
+                                if (dim.height > maxHeight) maxHeight = dim.height;
+                            } catch (e) { }
+                        });
+                        // Fallback defaults
+                        if (maxWidth === 0) maxWidth = 612;
+                        if (maxHeight === 0) maxHeight = 792;
+                    }
+
+                    processedImages.forEach((imagePath) => {
+                        try {
+                            const dimensions = sizeOf(imagePath);
+                            const w = dimensions.width || 612;
+                            const h = dimensions.height || 792;
+
+                            const pageWidth = options.upscale ? maxWidth : w;
+                            const pageHeight = options.upscale ? maxHeight : h;
+
+                            doc.addPage({ size: [pageWidth, pageHeight] });
+
+                            if (options.upscale) {
+                                // Scale to fit uniform page size while preserving aspect ratio
+                                doc.image(imagePath, 0, 0, {
+                                    fit: [pageWidth, pageHeight],
+                                    align: 'center',
+                                    valign: 'center'
+                                });
+                            } else {
+                                doc.image(imagePath, 0, 0, { width: w, height: h });
+                            }
+                        } catch (imgErr) {
+                            console.error(`Error adding image ${imagePath} to PDF:`, imgErr);
+                            doc.addPage();
+                            doc.text(`Failed to load image: ${path.basename(imagePath)}`);
+                        }
+                    });
+                    doc.end();
+                } catch (err) {
+                    doc.end();
+                    resolve({ success: false, error: err.message });
+                }
+            });
+
+        } catch (err) {
+            // Cleanup temp files on catch
+            tempFiles.forEach(f => {
+                try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { }
+            });
+            return { success: false, error: err.message };
+        }
     });
 
     ipcMain.on('trim-video', (event, options) => {

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
     selectFile: (options = {}) => ipcRenderer.invoke('select-file', options),
+    selectFiles: (options = {}) => ipcRenderer.invoke('select-files', options),
+    saveFile: (options = {}) => ipcRenderer.invoke('save-file', options),
     selectFolder: () => ipcRenderer.invoke('select-folder'),
     listFiles: (folderPath) => ipcRenderer.invoke('list-files', folderPath),
     getMetadata: (filePath) => ipcRenderer.invoke('get-metadata', filePath),
@@ -22,10 +24,12 @@ contextBridge.exposeInMainWorld('electron', {
     openExternal: (url) => ipcRenderer.send('open-external', url),
     saveMetadata: (options) => ipcRenderer.invoke('save-metadata', options),
     getVideoInfo: (url, options) => ipcRenderer.invoke('get-video-info', url, options),
+    getImageInfo: (filePath) => ipcRenderer.invoke('get-image-info', filePath),
     downloadVideo: (options) => ipcRenderer.send('download-video', options),
     cancelDownload: () => ipcRenderer.send('cancel-download'),
     onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, data) => callback(data)),
     onDownloadComplete: (callback) => ipcRenderer.on('download-complete', (event, data) => callback(data)),
     onDownloadError: (callback) => ipcRenderer.on('download-error', (event, data) => callback(data)),
-    getAppVersion: () => ipcRenderer.invoke('get-app-version')
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    convertImagesToPdf: (options) => ipcRenderer.invoke('convert-images-to-pdf', options)
 });

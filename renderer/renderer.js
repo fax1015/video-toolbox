@@ -6,6 +6,7 @@ import { get, showPopup, showConfirm, setupCustomSelects, showView, toggleSideba
 import { addToQueue, updateQueueUI, updateQueueProgress, renderQueue, processQueue, updateQueueStatusUI, setupQueueHandlers } from './modules/queue.js';
 import { setupEncoderHandlers, handleFileSelection, handleFolderSelection, getOptionsFromUI, applyOptionsToUI, updateEstFileSize } from './modules/encoder.js';
 import { setupAppsHandlers } from './modules/apps.js';
+import { setupImageToPdfHandlers, clearImages as clearImageToPdf } from './modules/image-to-pdf.js';
 import * as state from './modules/state.js';
 
 let downloaderModulePromise = null;
@@ -383,12 +384,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function saveSettings() {
         if (state.isApplyingSettings) return;
-        
+
         if (hwAccelSelect) {
             const selected = hwAccelSelect.value;
             state.appSettings.hwAccel = selected === 'auto' ? 'auto' : selected;
         }
-        
+
         if (outputSuffixInput) state.appSettings.outputSuffix = outputSuffixInput.value;
         if (defaultFormatSelect) state.appSettings.defaultFormat = defaultFormatSelect.value;
         if (themeSelectAttr) state.appSettings.theme = themeSelectAttr.value;
@@ -720,10 +721,12 @@ document.addEventListener('DOMContentLoaded', () => {
     setupQueueHandlers();
     setupEncoderHandlers();
     setupAppsHandlers();
+    setupImageToPdfHandlers();
 
     // Navigation handlers
     if (navVideo) {
         navVideo.addEventListener('click', () => {
+            clearImageToPdf();
             resetNav();
             navVideo.classList.add('active');
             showView(dropZone);
@@ -733,6 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navFolder) {
         navFolder.addEventListener('click', () => {
+            clearImageToPdf();
             resetNav();
             navFolder.classList.add('active');
             showView(folderDropZone);
@@ -742,6 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navQueue) {
         navQueue.addEventListener('click', () => {
+            clearImageToPdf();
             resetNav();
             navQueue.classList.add('active');
             showView(queueView);
@@ -752,6 +757,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navSettings) {
         navSettings.addEventListener('click', () => {
+            clearImageToPdf();
             resetNav();
             navSettings.classList.add('active');
             showView(settingsView);
@@ -761,6 +767,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navTrim) {
         navTrim.addEventListener('click', async () => {
+            clearImageToPdf();
             await loadTrimmer();
             resetNav();
             navTrim.classList.add('active');
@@ -771,6 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navExtractAudio) {
         navExtractAudio.addEventListener('click', async () => {
+            clearImageToPdf();
             await loadExtractAudio();
             resetNav();
             navExtractAudio.classList.add('active');
@@ -781,6 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navDownloader) {
         navDownloader.addEventListener('click', async () => {
+            clearImageToPdf();
             const { showDownloader } = await loadDownloader();
             showDownloader();
         });
@@ -788,6 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navInspector) {
         navInspector.addEventListener('click', async () => {
+            clearImageToPdf();
             await loadInspector();
             resetNav();
             navInspector.classList.add('active');
@@ -846,13 +856,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const wasTrimming = state.isTrimming;
         state.setExtracting(false);
         state.setTrimming(false);
-        
+
         if (completeTitle) {
             if (wasExtracting) completeTitle.textContent = 'Extraction Complete!';
             else if (wasTrimming) completeTitle.textContent = 'Trim Complete!';
             else completeTitle.textContent = 'Encoding Complete!';
         }
-        
+
+        const newEncodeBtn = get('new-encode-btn');
+        if (newEncodeBtn) newEncodeBtn.textContent = 'Encode Another Video';
+
         if (state.appSettings.notifyOnComplete) {
             const action = wasExtracting ? 'Extraction' : (wasTrimming ? 'Trim' : 'Encoding');
             new Notification(action + ' Complete', { body: `File saved to: ${data.outputPath}` });
@@ -879,7 +892,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.setExtracting(false);
         state.setTrimming(false);
         alert(`Error: ${data.message}`);
-        
+
         if (state.isQueueRunning && state.currentlyEncodingItemId !== null) {
             const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
             if (item) {
@@ -909,7 +922,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     if (openFolderBtn) {
         openFolderBtn.addEventListener('click', () => {
             if (state.currentOutputPath) {
@@ -917,7 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     if (newEncodeBtn) {
         newEncodeBtn.addEventListener('click', () => {
             if (state.lastActiveViewId === 'trimDropZone') {
@@ -928,6 +941,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 showView(extractAudioDropZone);
                 resetNav();
                 if (navExtractAudio) navExtractAudio.classList.add('active');
+            } else if (state.lastActiveViewId === 'imageToPdfDropZone') {
+                const imageDropZone = get('image-to-pdf-drop-zone');
+                showView(imageDropZone);
+                resetNav();
             } else {
                 showView(dropZone);
                 resetNav();
@@ -1026,7 +1043,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { processVideoUrl } = await loadDownloader();
 
         state.setCurrentEditingQueueId(id);
-        
+
         const dlUrlInput = get('dl-url');
         const dlModeSelect = get('dl-mode');
         const dlQualitySelect = get('dl-quality');

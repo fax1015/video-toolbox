@@ -94,6 +94,15 @@ export const TOOL_REGISTRY = [
         action: 'view'
     },
     {
+        id: 'image-to-pdf',
+        name: 'Image to PDF',
+        description: 'Combine multiple images into a single PDF document.',
+        icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><rect x="7" y="11" width="10" height="7" rx="1"></rect><circle cx="10" cy="14" r="1"></circle><path d="M17 18l-3-3-3 3"></path></svg>`,
+        viewId: 'image-to-pdf-drop-zone',
+        navId: 'nav-image-to-pdf',
+        action: 'view'
+    },
+    {
         id: 'inspector',
         name: 'Media Inspector',
         description: 'View detailed technical metadata for any media file.',

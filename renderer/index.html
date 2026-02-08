@@ -41,13 +41,17 @@
             <aside class="app-sidebar">
                 <div class="sidebar-active-indicator" aria-hidden="true"></div>
                 <div class="sidebar-nav">
-                    <button class="nav-item active" id="nav-video" data-tool-id="converter" title="Single Video"></button>
+                    <button class="nav-item active" id="nav-video" data-tool-id="converter"
+                        title="Single Video"></button>
                     <button class="nav-item" id="nav-folder" data-tool-id="folder" title="Batch Folders"></button>
                     <button class="nav-item" id="nav-trim" data-tool-id="trim" title="Trim Video"></button>
-                    <button class="nav-item" id="nav-extract-audio" data-tool-id="extract-audio" title="Extract Audio"></button>
+                    <button class="nav-item" id="nav-extract-audio" data-tool-id="extract-audio"
+                        title="Extract Audio"></button>
 
-                    <button class="nav-item" id="nav-downloader" data-tool-id="downloader" title="Video Downloader"></button>
-                    <button class="nav-item" id="nav-inspector" data-tool-id="inspector" title="Media Inspector"></button>
+                    <button class="nav-item" id="nav-downloader" data-tool-id="downloader"
+                        title="Video Downloader"></button>
+                    <button class="nav-item" id="nav-inspector" data-tool-id="inspector"
+                        title="Media Inspector"></button>
 
                     <div class="sidebar-divider"></div>
                     <button class="nav-item" id="nav-queue" title="Encoding Queue">
@@ -110,6 +114,16 @@
                         <div class="icon-container" data-tool-id="extract-audio"></div>
                         <h2>Drop video to extract audio</h2>
                         <p>or click to browse files</p>
+                    </div>
+                </div>
+                <div id="image-to-pdf-drop-zone" class="drop-zone hidden">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container" data-tool-id="image-to-pdf"></div>
+                        <h2>Drop images to create a PDF</h2>
+                        <p>or click to browse files</p>
+                        <div class="supported-formats">
+                            Supports PNG, JPG, JPEG, WEBP, BMP, TIFF
+                        </div>
                     </div>
                 </div>
 
@@ -516,6 +530,122 @@
                         </button>
                     </div>
                 </div>
+                <div id="image-to-pdf-dashboard" class="dashboard hidden">
+                    <button id="image-to-pdf-back-btn" class="back-btn" title="Go back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <div class="settings-panel">
+                        <div class="panel-header-actions">
+                            <h4 class="panel-title">Selected Images <span id="image-to-pdf-count" data-animate-number
+                                    style="margin-left: 8px; opacity: 0.6;">0</span></h4>
+
+                            <div class="dropdown-container" id="image-to-pdf-sort-container">
+                                <button class="secondary-btn" id="image-to-pdf-sort-btn" title="Sort List"
+                                    aria-label="Sort images" style="padding: 10px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960"
+                                        width="24px" fill="#e3e3e3">
+                                        <path
+                                            d="M120-240v-80h240v80H120Zm0-200v-80h480v80H120Zm0-200v-80h720v80H120Z" />
+                                    </svg>
+                                </button>
+                                <div class="dropdown-menu align-right">
+                                    <div class="dropdown-category">Sort By</div>
+                                    <div class="dropdown-item" data-sort="name-asc">Name (A-Z)</div>
+                                    <div class="dropdown-item" data-sort="name-desc">Name (Z-A)</div>
+                                    <div class="dropdown-divider"></div>
+                                    <div class="dropdown-item" data-sort="size-asc">Size (Smallest)</div>
+                                    <div class="dropdown-item" data-sort="size-desc">Size (Largest)</div>
+                                    <div class="dropdown-divider"></div>
+                                    <div class="dropdown-item" data-sort="mtime-desc">Date Modified (Newest)</div>
+                                    <div class="dropdown-item" data-sort="mtime-asc">Date Modified (Oldest)</div>
+                                    <div class="dropdown-divider"></div>
+                                    <div class="dropdown-item" data-sort="ext-asc">Extension (A-Z)</div>
+                                    <div class="dropdown-item" data-sort="ext-desc">Extension (Z-A)</div>
+                                    <div class="dropdown-divider"></div>
+                                    <div class="dropdown-item" data-sort="added-asc">Date Added (Oldest)</div>
+                                    <div class="dropdown-item" data-sort="added-desc">Date Added (Newest)</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="image-preview-wrap">
+                            <div class="image-preview-carousel-outer">
+                                <div id="image-to-pdf-preview" class="image-preview-carousel"
+                                    aria-label="Image preview carousel"></div>
+                            </div>
+                        </div>
+                        <p id="image-to-pdf-preview-empty" class="help-text" style="margin-top: 12px;">Add images to see
+                            previews.</p>
+                        <p id="image-to-pdf-reorder-hint" class="help-text" style="margin-top: 10px;">Drag images to
+                            reorder pages.</p>
+
+                        <div id="image-to-pdf-controls" class="rate-control-options hidden"
+                            style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+                            <div style="display: flex; align-items: center; gap: 40px;">
+                                <div class="control-group" style="min-width: 180px; margin-bottom: 0;">
+                                    <label class="checkbox-label"
+                                        style="justify-content: flex-start; gap: 8px; padding: 0;">
+                                        <span>Scale small images to largest</span>
+                                        <div class="info-tooltip-trigger">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                                stroke-linejoin="round" style="opacity: 0.6; cursor: help;">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                            </svg>
+                                            <div class="info-tooltip">
+                                                Small images will be scaled up to match the largest image dimensions in
+                                                the sequence.
+                                            </div>
+                                        </div>
+                                        <input type="checkbox" id="image-to-pdf-upscale">
+                                    </label>
+                                </div>
+                                <div class="control-group crf-group" style="flex: 1; margin-bottom: 0;">
+                                    <label for="image-to-pdf-quality-slider">Quality: <span
+                                            id="image-to-pdf-quality-value" data-animate-number>80</span>%</label>
+                                    <input type="range" id="image-to-pdf-quality-slider" min="1" max="100" value="80">
+                                    <div class="crf-labels">
+                                        <span>Extra Small</span>
+                                        <span>Best Quality</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+                                <div class="control-group" style="text-align: right;">
+                                    <label>Est. PDF Size</label>
+                                    <span id="image-to-pdf-est-size" class="trim-info-value"
+                                        data-animate-number>--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dashboard-actions">
+                        <button id="image-to-pdf-add-btn" class="action-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add Images
+                        </button>
+                        <button id="image-to-pdf-clear-btn" class="action-btn danger">
+                            Clear List
+                        </button>
+                        <button id="image-to-pdf-convert-btn" class="primary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Convert to PDF
+                        </button>
+                    </div>
+                </div>
                 <div id="trim-drop-zone" class="drop-zone hidden">
                     <div class="drop-zone-inner">
                         <div class="icon-container" data-tool-id="trim"></div>
@@ -626,11 +756,13 @@
                                 style="display: flex; justify-content: space-between; margin-top: 15px;">
                                 <div class="control-group">
                                     <label>Trimmed Length</label>
-                                    <span id="trimmed-duration" class="trim-info-value" data-animate-number>00:00:00</span>
+                                    <span id="trimmed-duration" class="trim-info-value"
+                                        data-animate-number>00:00:00</span>
                                 </div>
                                 <div class="control-group" style="text-align: right;">
                                     <label>Est. File Size</label>
-                                    <span id="estimated-file-size" class="trim-info-value" data-animate-number>Calculating...</span>
+                                    <span id="estimated-file-size" class="trim-info-value"
+                                        data-animate-number>Calculating...</span>
                                 </div>
                             </div>
                         </div>
@@ -759,7 +891,7 @@
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M23 4v6h-6"></path>
-                                        <path d="M1 20v-6h6"a></path>
+                                        <path d="M1 20v-6h6" a></path>
                                         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15">
                                         </path>
                                     </svg>
@@ -852,7 +984,8 @@
                                 </div>
 
                                 <div id="crf-container" class="control-group crf-group">
-                                    <label for="crf-slider">Quality: <span id="crf-value" data-animate-number>23</span></label>
+                                    <label for="crf-slider">Quality: <span id="crf-value"
+                                            data-animate-number>23</span></label>
                                     <input type="range" id="crf-slider" min="0" max="51" value="23">
                                     <div class="crf-labels">
                                         <span>Placebo Quality</span>
@@ -864,15 +997,22 @@
                                     <div class="settings-split">
                                         <div class="control-group">
                                             <div class="number-input-container">
-                                                <button type="button" class="number-stepper-btn decrement" data-input-id="v-bitrate" aria-label="Decrease average bitrate"></button>
+                                                <button type="button" class="number-stepper-btn decrement"
+                                                    data-input-id="v-bitrate"
+                                                    aria-label="Decrease average bitrate"></button>
                                                 <div class="number-input-field">
                                                     <div class="number-input-display" aria-hidden="true">
                                                         <span class="number-input-value current">2500</span>
                                                         <span class="number-input-value next"></span>
                                                     </div>
-                                                    <input type="number" id="v-bitrate" class="number-input-text-box number-input-hidden" placeholder="2500" value="2500" min="1" max="100000" data-step="100">
+                                                    <input type="number" id="v-bitrate"
+                                                        class="number-input-text-box number-input-hidden"
+                                                        placeholder="2500" value="2500" min="1" max="100000"
+                                                        data-step="100">
                                                 </div>
-                                                <button type="button" class="number-stepper-btn increment" data-input-id="v-bitrate" aria-label="Increase average bitrate"></button>
+                                                <button type="button" class="number-stepper-btn increment"
+                                                    data-input-id="v-bitrate"
+                                                    aria-label="Increase average bitrate"></button>
                                             </div>
                                         </div>
                                         <label class="checkbox-label" style="padding: 0;">
@@ -984,7 +1124,7 @@
                     </div>
 
                     <div class="dashboard-actions">
-                        <button id="add-queue-btn" class="secondary-btn">
+                        <button id="add-queue-btn" class="action-btn">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                                 <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"
                                     stroke-linecap="round" />
@@ -1195,15 +1335,19 @@
                             <div class="control-group">
                                 <label>CPU Threads</label>
                                 <div class="number-input-container">
-                                    <button type="button" class="number-stepper-btn decrement" data-input-id="cpu-threads" aria-label="Decrease CPU threads"></button>
+                                    <button type="button" class="number-stepper-btn decrement"
+                                        data-input-id="cpu-threads" aria-label="Decrease CPU threads"></button>
                                     <div class="number-input-field">
                                         <div class="number-input-display" aria-hidden="true">
                                             <span class="number-input-value current">0</span>
                                             <span class="number-input-value next"></span>
                                         </div>
-                                        <input type="number" id="cpu-threads" class="number-input-text-box number-input-hidden" min="0" max="64" value="0" data-step="1">
+                                        <input type="number" id="cpu-threads"
+                                            class="number-input-text-box number-input-hidden" min="0" max="64" value="0"
+                                            data-step="1">
                                     </div>
-                                    <button type="button" class="number-stepper-btn increment" data-input-id="cpu-threads" aria-label="Increase CPU threads"></button>
+                                    <button type="button" class="number-stepper-btn increment"
+                                        data-input-id="cpu-threads" aria-label="Increase CPU threads"></button>
                                 </div>
                                 <p class="help-text">0 = Auto (Recommended)</p>
                             </div>
@@ -1220,7 +1364,7 @@
                                 <label>Output Folder</label>
                                 <div class="folder-input-group">
                                     <input type="text" id="output-folder" placeholder="Same as source">
-                                    <button id="select-output-folder-btn" class="action-btn small">Browse</button>
+                                    <button id="select-output-folder-btn" class="secondary-btn">Browse</button>
                                 </div>
                             </div>
                             <div class="control-group">
@@ -1363,6 +1507,23 @@
             <div class="popup-message" id="popup-message"></div>
             <div class="popup-actions" id="popup-actions">
                 <button id="popup-ok-btn" class="primary-btn popup-btn">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="image-viewer-overlay" class="image-viewer-overlay hidden" role="dialog" aria-modal="true">
+        <div class="image-viewer-content">
+            <button id="image-viewer-close" class="back-btn image-viewer-close" aria-label="Close image preview">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+            </button>
+            <img id="image-viewer-img" class="image-viewer-img" alt="" />
+            <div class="image-viewer-meta">
+                <div id="image-viewer-name" class="image-viewer-name"></div>
+                <div id="image-viewer-tags" class="file-meta"></div>
+                <div id="image-viewer-info" class="image-viewer-info"></div>
             </div>
         </div>
     </div>
