@@ -53,6 +53,108 @@ async function loadTrimmer() {
 let extractAudioModulePromise = null;
 let extractAudioInitialized = false;
 
+const UPDATE_REPO = { owner: 'fax1015', name: 'video-toolbox' };
+const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases/latest`;
+const UPDATE_PAGE_URL = `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/releases/latest`;
+const UPDATE_BADGE_DELAY_MS = 2500;
+const UPDATE_BADGE_VISIBLE_MS = 3500;
+const UPDATE_BADGE_TRANSITION_MS = 1300;
+
+const updateBadgeTimers = new WeakMap();
+
+const normalizeVersion = (version) => {
+    if (!version) return null;
+    const trimmed = version.trim().replace(/^v/i, '');
+    const main = trimmed.split('-')[0];
+    if (!/^\d+(\.\d+)*$/.test(main)) return null;
+    return main;
+};
+
+const compareVersions = (a, b) => {
+    const aParts = a.split('.').map((part) => parseInt(part, 10));
+    const bParts = b.split('.').map((part) => parseInt(part, 10));
+    const maxParts = Math.max(aParts.length, bParts.length);
+    for (let i = 0; i < maxParts; i += 1) {
+        const aVal = aParts[i] ?? 0;
+        const bVal = bParts[i] ?? 0;
+        if (aVal > bVal) return 1;
+        if (aVal < bVal) return -1;
+    }
+    return 0;
+};
+
+const fetchLatestReleaseVersion = async () => {
+    const response = await fetch(UPDATE_API_URL, {
+        headers: { 'Accept': 'application/vnd.github+json' }
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.tag_name || data?.name || null;
+};
+
+const clearUpdateBadgeTimers = (updateBadge) => {
+    if (!updateBadge) return;
+    const timers = updateBadgeTimers.get(updateBadge);
+    if (timers) timers.forEach((timerId) => clearTimeout(timerId));
+    updateBadgeTimers.set(updateBadge, []);
+};
+
+const showUpdateBadge = (updateBadge) => {
+    if (!updateBadge) return;
+    updateBadge.classList.remove('is-hidden');
+    requestAnimationFrame(() => {
+        updateBadge.classList.add('is-visible');
+    });
+};
+
+const hideUpdateBadge = (updateBadge) => {
+    if (!updateBadge) return;
+    updateBadge.classList.remove('is-visible');
+    const hideTimer = setTimeout(() => {
+        updateBadge.classList.add('is-hidden');
+    }, UPDATE_BADGE_TRANSITION_MS);
+    const timers = updateBadgeTimers.get(updateBadge) || [];
+    timers.push(hideTimer);
+    updateBadgeTimers.set(updateBadge, timers);
+};
+
+const showTemporaryBadge = (updateBadge, message) => {
+    if (!updateBadge) return;
+    clearUpdateBadgeTimers(updateBadge);
+    updateBadge.textContent = message;
+    updateBadge.classList.remove('update-available', 'is-visible');
+    updateBadge.classList.add('is-hidden');
+
+    const timers = [];
+    const showTimer = setTimeout(() => {
+        showUpdateBadge(updateBadge);
+        const hideTimer = setTimeout(() => {
+            hideUpdateBadge(updateBadge);
+        }, UPDATE_BADGE_VISIBLE_MS);
+        timers.push(hideTimer);
+    }, UPDATE_BADGE_DELAY_MS);
+    timers.push(showTimer);
+    updateBadgeTimers.set(updateBadge, timers);
+};
+
+const checkForUpdates = async (currentVersion, updateBadge) => {
+    if (!currentVersion || !updateBadge) return 'unknown';
+    clearUpdateBadgeTimers(updateBadge);
+    const latestRaw = await fetchLatestReleaseVersion();
+    const latest = normalizeVersion(latestRaw);
+    const current = normalizeVersion(currentVersion);
+    if (!latest || !current) return 'unknown';
+    if (compareVersions(latest, current) > 0) {
+        updateBadge.textContent = `Update v${latest} available`;
+        updateBadge.title = 'Open the latest release';
+        updateBadge.classList.add('update-available');
+        updateBadge.classList.remove('is-hidden');
+        showUpdateBadge(updateBadge);
+        return 'update';
+    }
+    return 'current';
+};
+
 async function loadExtractAudio() {
     if (!extractAudioModulePromise) {
         extractAudioModulePromise = import('./modules/extract-audio.js').then((mod) => {
@@ -99,9 +201,32 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAnimatedNumbers();
 
     const appVersionEl = get('app-version');
+    const updateBadge = get('update-badge');
+    if (updateBadge && window.electron?.openExternal) {
+        updateBadge.addEventListener('click', () => {
+            window.electron.openExternal(UPDATE_PAGE_URL);
+        });
+    }
     if (appVersionEl && window.electron?.getAppVersion) {
         window.electron.getAppVersion().then((version) => {
-            if (version) appVersionEl.textContent = `v${version}`;
+            if (version) {
+                appVersionEl.textContent = `v${version}`;
+                checkForUpdates(version, updateBadge).then((status) => {
+                    if (!updateBadge) return;
+                    if (status === 'current') {
+                        showTemporaryBadge(updateBadge, 'Up to date');
+                    } else if (status === 'unknown') {
+                        updateBadge.classList.remove('update-available');
+                        updateBadge.classList.add('hidden');
+                    }
+                }).catch((err) => {
+                    if (updateBadge) {
+                        updateBadge.classList.remove('update-available');
+                        updateBadge.classList.add('hidden');
+                    }
+                    console.warn('Update check failed', err);
+                });
+            }
         }).catch(() => {
             // Ignore version lookup errors and keep default text
         });

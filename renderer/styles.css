@@ -15,6 +15,7 @@
     font-style: italic;
     font-display: swap;
 }
+
 @font-face {
     font-family: 'Rubik';
     src: url('../assets/fonts/Rubik-VariableFont_wght.ttf') format('truetype');
@@ -52,6 +53,13 @@
     --border-radius-lg: 16px;
     --border-radius-sm: 8px;
     --transition: 0.2s ease;
+    --auto-height-duration: 0.3s;
+    --auto-height-easing: ease;
+    --ease-pop: linear(
+        0, 0.1567 4%, 0.9253 15.67%, 1.0741 19.51%, 1.1502 23.53%, 1.1638 26.17%,
+        1.1544 29.14%, 1.0168 42.31%, 0.9764 50.24%, 0.9747 56.28%, 1.0033 76.16%,
+        0.9998
+    );
     --shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
     --skeuo-shadow-lg: 0 26px 60px rgba(0, 0, 0, 0.22), 0 12px 24px rgba(0, 0, 0, 0.14);
     --skeuo-shadow-md: 0 18px 40px rgba(0, 0, 0, 0.18), 0 8px 18px rgba(0, 0, 0, 0.1);
@@ -101,6 +109,9 @@
     --text-muted: color-mix(in srgb, var(--accent-primary) 15%, #64748b);
     --border-color: rgba(0, 0, 0, 0.08);
     --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --skeuo-shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.08), 0 6px 16px rgba(15, 23, 42, 0.06);
+    --skeuo-shadow-md: 0 12px 26px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.05);
+    --skeuo-shadow-sm: 0 8px 18px rgba(15, 23, 42, 0.07), 0 3px 8px rgba(15, 23, 42, 0.04);
 }
 
 .light-theme .bg-orb {
@@ -459,7 +470,7 @@
     background: var(--accent-primary);
     opacity: 0;
     transform: translateY(0);
-    transition: transform 0.3s ease, opacity 0.2s ease;
+    transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1), opacity 0.2s ease;
     box-shadow: 0 0 10px rgb(from var(--accent-primary) r g b / 0.3);
     pointer-events: none;
 }
@@ -703,6 +714,74 @@ button {
     color: var(--accent-primary);
 }
 
+.update-badge {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+    color: var(--text-primary);
+    border: 1px solid color-mix(in srgb, var(--accent-primary) 45%, transparent);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+    cursor: pointer;
+    opacity: 0;
+    transform: scaleX(0.2) scaleY(0.9);
+    transform-origin: left center;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity 0.25s ease,
+        transform 1s linear(0, 0.1639 3.72%, 1.0258 13.6%, 1.171 16.52%, 1.2386 19.52%, 1.2446 21.45%,
+            1.225 23.59%, 1.0035 34.07%, 0.9422 40.33%, 0.9448 44.65%, 0.9983 54.96%,
+            1.0137 60.89%, 0.9969 81.18%, 1.0005),
+        visibility 0s linear 1.3s;
+    will-change: transform, opacity;
+}
+
+.update-badge.is-hidden {
+    opacity: 0;
+    transform: scaleX(0.2) scaleY(0.9);
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.update-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--accent-primary) 60%, transparent);
+}
+
+.update-badge.is-visible {
+    opacity: 1;
+    transform: scaleX(1) scaleY(1);
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+        opacity 0.25s ease,
+        transform 1s linear(0, 0.1639 3.72%, 1.0258 13.6%, 1.171 16.52%, 1.2386 19.52%, 1.2446 21.45%,
+            1.225 23.59%, 1.0035 34.07%, 0.9422 40.33%, 0.9448 44.65%, 0.9983 54.96%,
+            1.0137 60.89%, 0.9969 81.18%, 1.0005),
+        visibility 0s linear 0s;
+}
+
+.update-badge.update-available {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--error);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.update-badge.update-available::before {
+    background: var(--error);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--error) 60%, transparent);
+}
+
 .status-badge {
     font-size: 0.7rem;
     padding: 4px 10px;
@@ -752,7 +831,7 @@ button {
     border-radius: var(--border-radius-lg);
     cursor: pointer;
     transition: all var(--transition), transform 0.2s ease;
-    animation: boxReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: boxReveal 0.6s var(--ease-pop) both;
     margin: auto 0;
     box-shadow: var(--skeuo-shadow-md);
 }
@@ -782,7 +861,7 @@ button {
 }
 
 .drop-zone-inner>* {
-    animation: contentFadeIn 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) 0.2s both;
+    animation: contentFadeIn 0.6s var(--ease-pop) 0.2s both;
 }
 
 @keyframes contentFadeIn {
@@ -900,7 +979,7 @@ button {
 
 /* Apply the bouncy animation to everything inside the dashboard EXCEPT the back button */
 .dashboard.container-loaded>*:not(.back-btn):not(.header-row) {
-    animation: container-pop-in 0.5s cubic-bezier(.24, 1.26, .44, 1.03) forwards;
+    animation: container-pop-in 0.6s var(--ease-pop) forwards;
 }
 
 .back-btn:hover {
@@ -1193,6 +1272,7 @@ select:disabled {
         transform: translateY(0);
         opacity: 1;
     }
+
     to {
         transform: translateY(-70%);
         opacity: 0;
@@ -1204,6 +1284,7 @@ select:disabled {
         transform: translateY(70%);
         opacity: 0;
     }
+
     to {
         transform: translateY(0);
         opacity: 1;
@@ -1215,6 +1296,7 @@ select:disabled {
         transform: translateY(0);
         opacity: 1;
     }
+
     to {
         transform: translateY(70%);
         opacity: 0;
@@ -1226,6 +1308,7 @@ select:disabled {
         transform: translateY(-70%);
         opacity: 0;
     }
+
     to {
         transform: translateY(0);
         opacity: 1;
@@ -1233,6 +1316,7 @@ select:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
     .dropdown-trigger-text.animate-down .dropdown-text-value.current,
     .dropdown-trigger-text.animate-down .dropdown-text-value.next,
     .dropdown-trigger-text.animate-up .dropdown-text-value.current,
@@ -1748,7 +1832,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     align-items: center;
     justify-content: center;
     gap: 10px;
-    transition: all 0.4s cubic-bezier(.24,1.26,.44,1.03), transform 0.2s ease;
+    transition: all 0.4s cubic-bezier(.24, 1.26, .44, 1.03), transform 0.2s ease;
     box-shadow: var(--skeuo-shadow-sm);
 }
 
@@ -2099,7 +2183,7 @@ select {
     align-items: center;
     justify-content: center;
     gap: 10px;
-    transition: all 0.4s cubic-bezier(.24,1.26,.44,1.03);
+    transition: all 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
     box-shadow: var(--skeuo-shadow-sm);
 }
 
@@ -2516,7 +2600,7 @@ input[type="text"]:focus {
 .dropdown-trigger.preset-revert svg {
     margin-left: 6px;
     opacity: 0.7;
-    transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+    transition: transform 0.6s var(--ease-pop);
 }
 
 .dropdown-trigger.preset-revert:hover svg {
@@ -2633,7 +2717,7 @@ input[type="text"]:focus {
     box-shadow: none;
 }
 
-.rate-control-options > label{
+.rate-control-options>label {
     font-size: var(--font-small);
     font-weight: 500;
     color: var(--text-secondary);
@@ -2673,7 +2757,11 @@ input[type="text"]:focus {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 6px;
-    transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+    transition:
+        transform 0.6s var(--ease-pop),
+        box-shadow 0.2s ease,
+        background 0.2s ease,
+        color 0.2s ease;
 }
 
 .radio-label:hover span {
@@ -2682,7 +2770,7 @@ input[type="text"]:focus {
     transform: translateY(-1px);
 }
 
-.radio-label input[type="radio"]:checked + span {
+.radio-label input[type="radio"]:checked+span {
     background: var(--bg-secondary);
     color: var(--text-primary);
     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
@@ -3057,7 +3145,10 @@ input[type="text"]:focus {
     padding: 16px 12px;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.2s ease, transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), visibility 0.2s ease;
+    transition:
+        opacity 0.2s ease,
+        transform 0.6s var(--ease-pop),
+        visibility 0.2s ease;
     z-index: 100;
 }
 
@@ -3309,6 +3400,7 @@ input[type="text"]:focus {
 }
 
 @keyframes loader-bars-grow {
+
     0%,
     100% {
         transform: scaleY(0.3);
@@ -3898,10 +3990,12 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         filter: blur(0);
         transform: translateX(0);
     }
+
     20% {
         filter: blur(2px);
         transform: translateX(0) scale(0.98);
     }
+
     100% {
         filter: blur(0);
         transform: translateX(0);
@@ -3913,10 +4007,12 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         filter: blur(0);
         transform: translateX(0);
     }
+
     20% {
         filter: blur(2px);
         transform: translateX(2px) scale(0.98);
     }
+
     100% {
         filter: blur(0);
         transform: translateX(0);
@@ -3928,10 +4024,12 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         filter: blur(0);
         transform: translateX(0);
     }
+
     20% {
         filter: blur(2px);
         transform: translateX(-2px) scale(0.98);
     }
+
     100% {
         filter: blur(0);
         transform: translateX(0);
@@ -3944,11 +4042,13 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         opacity: 1;
         transform: translate(-50%, -50%);
     }
+
     20% {
         filter: blur(2px);
         opacity: 0.75;
         transform: translate(-50%, -50%);
     }
+
     100% {
         filter: blur(0);
         opacity: 1;
@@ -4106,7 +4206,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
     height: 14px;
 }
 
-.number-stepper-btn:hover >   {
+.number-stepper-btn:hover> {
     background: var(--bg-hover);
     border-color: var(--accent-primary);
 }
@@ -4126,6 +4226,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         transform: translateX(0);
         opacity: 1;
     }
+
     100% {
         transform: translateX(-100%);
         opacity: 0;
@@ -4137,6 +4238,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         transform: translateX(100%);
         opacity: 0;
     }
+
     100% {
         transform: translateX(0);
         opacity: 1;
@@ -4148,6 +4250,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         transform: translateX(0);
         opacity: 1;
     }
+
     100% {
         transform: translateX(100%);
         opacity: 0;
@@ -4159,6 +4262,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
         transform: translateX(-100%);
         opacity: 0;
     }
+
     100% {
         transform: translateX(0);
         opacity: 1;
@@ -4889,7 +4993,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
     padding: 4px;
     border-radius: var(--border-radius-sm);
     gap: 4px;
-    height: var(--input-height);    
+    height: var(--input-height);
     border: 1px solid var(--border-color);
 }
 

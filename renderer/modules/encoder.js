@@ -531,6 +531,13 @@ export async function handleFolderSelection(folderPath) {
         const outputFolderInput = get('output-folder');
 
         const rateMode = document.querySelector('input[name="rate-mode"]:checked')?.value || 'crf';
+        const useNoAudio = audioSelect && audioSelect.value === 'none';
+        const defaultAudioTracks = useNoAudio
+            ? []
+            : [{ isSource: true, name: 'Source Audio' }];
+        const effectiveAudioTracks = state.audioTracks.length > 0
+            ? [...state.audioTracks]
+            : (state.currentFilePath ? [] : defaultAudioTracks);
         
         files.forEach(file => {
             const options = {
@@ -546,8 +553,8 @@ export async function handleFolderSelection(folderPath) {
                 twoPass: twoPassCheckbox ? twoPassCheckbox.checked : false,
                 audioCodec: audioSelect ? audioSelect.value : 'aac',
                 audioBitrate: audioBitrateSelect ? audioBitrateSelect.value : '192k',
-                audioTracks: [],
-                subtitleTracks: [],
+                audioTracks: effectiveAudioTracks,
+                subtitleTracks: [...state.subtitleTracks],
                 chaptersFile: null,
                 outputSuffix: state.appSettings.outputSuffix,
                 outputFolder: outputFolderInput ? outputFolderInput.value : '',
