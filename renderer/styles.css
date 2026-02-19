@@ -32,6 +32,9 @@
     font-display: swap;
 }
 
+/* * {
+    outline: #00ff00 1px solid;
+} */
 
 :root {
     --bg-primary: color-mix(in srgb, var(--accent-primary) 2%, #080808);
@@ -52,7 +55,6 @@
     --border-radius: 12px;
     --border-radius-lg: 16px;
     --border-radius-sm: 8px;
-    --transition: 0.2s ease;
     --auto-height-duration: 0.3s;
     --auto-height-easing: ease;
     --transition: 0.3s ease;
@@ -437,6 +439,7 @@
     border: 1px dashed var(--border-color);
     border-radius: var(--border-radius-lg);
     padding: 60px 40px;
+    height: 50vh;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -470,7 +473,7 @@
     background: var(--accent-primary);
     opacity: 0;
     transform: translateY(0);
-    transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1), opacity 0.2s ease;
+    transition: transform var(--transition), opacity 0.2s ease;
     box-shadow: 0 0 10px rgb(from var(--accent-primary) r g b / 0.3);
     pointer-events: none;
 }
@@ -964,7 +967,7 @@ button {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--transition), transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: all var(--transition), transform 0.6s var(--ease-pop);
     z-index: 95000;
     box-shadow: var(--skeuo-shadow-sm);
 }
@@ -1145,9 +1148,6 @@ select:disabled {
     /* Changed from 100% */
 }
 
-.dropdown-container.full-width {
-    width: 100%;
-}
 
 .dropdown-container.disabled {
     opacity: 0.5;
@@ -1743,6 +1743,12 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    width: 100%;
+}
+
+.hw-accel-wrapper .dropdown-container {
+    flex: 1;
+    min-width: 0;
 }
 
 .auto-tag {
@@ -1752,8 +1758,9 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     padding: 6px;
     border-radius: var(--border-radius-sm);
     font-weight: 500;
-    height: 100%;
     border: 1px solid var(--border-color);
+    max-width: 80px;
+    height: 36px;
 }
 
 .folder-input-group {
@@ -1793,7 +1800,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     border-radius: 20px;
     position: relative;
     cursor: pointer;
-    transition: all 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: all 0.6s var(--ease-pop);
     flex-shrink: 0;
 }
 
@@ -1806,7 +1813,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     border-radius: 50%;
     top: 2px;
     left: 2px;
-    transition: all 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: all 0.6s var(--ease-pop);
 }
 
 .checkbox-label input:checked {
@@ -2256,7 +2263,10 @@ select {
     cursor: pointer;
     transition: all var(--transition);
     box-shadow: var(--skeuo-shadow-sm);
-}
+    /* Staggered pop-in for newly added items */
+    animation: item-pop-in 0.4s var(--ease-pop) backwards;
+    animation-delay: calc(var(--item-index, 0) * 50ms);
+} 
 
 .queue-item:hover {
     background: var(--bg-hover);
@@ -2274,7 +2284,7 @@ select {
     filter: grayscale(1);
 }
 
-.queue-item.completed .queue-item-remove {
+.queue-item.completed .remove-btn {
     pointer-events: auto;
     opacity: 1;
 }
@@ -2318,7 +2328,7 @@ select {
     transition: width 0.3s ease;
 }
 
-.queue-item-remove {
+.remove-btn {
     background: transparent;
     border: none;
     color: var(--text-muted);
@@ -2331,7 +2341,7 @@ select {
     justify-content: center;
 }
 
-.queue-item-remove:hover {
+.remove-btn:hover {
     color: var(--error);
     background: rgb(from var(--error) r g b / 0.1);
 }
@@ -2796,6 +2806,52 @@ input[type="text"]:focus {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    animation: item-pop-in 0.4s var(--ease-pop) backwards;
+    animation-delay: calc(var(--item-index, 0) * 50ms);
+}
+
+.track-item.removing {
+    animation: item-pop-out 0.25s ease forwards !important;
+    pointer-events: none;
+}
+
+.track-item.collapsing {
+    /* Collapse the item's space after the exit animation starts */
+    max-height: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-bottom: -8px !important;
+    /* Compensate for gap */
+    overflow: hidden;
+    transition: max-height 0.2s ease, padding 0.2s ease, margin 0.2s ease;
+}
+
+/* Queue-specific exit animation (matches track-item behavior) */
+.queue-item.removing {
+    animation: item-pop-out 0.25s ease forwards !important;
+    pointer-events: none;
+}
+
+.queue-item.collapsing {
+    /* Collapse the item's space after the exit animation starts */
+    max-height: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-bottom: -8px !important;
+    overflow: hidden;
+    transition: max-height 0.2s ease, padding 0.2s ease, margin 0.2s ease;
+}
+
+@keyframes item-pop-out {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(0.95) translateX(-10px);
+    }
 }
 
 .track-item-info {
@@ -2816,6 +2872,7 @@ input[type="text"]:focus {
 
 .btn-block {
     margin-top: 12px;
+    padding: 12px;
     width: 100%;
 }
 
@@ -2864,7 +2921,7 @@ input[type="text"]:focus {
 
     /* Content Transition */
     transform: scale(1) translateY(0);
-    transition: transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: transform 0.6s var(--ease-pop);
 
     display: flex;
     flex-direction: column;
@@ -2955,7 +3012,7 @@ input[type="text"]:focus {
     border-bottom: 2px solid var(--text-muted);
     transform: rotate(45deg);
     /* Down arrow */
-    transition: transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: transform 0.6s var(--ease-pop);
     margin-right: 4px;
 }
 
@@ -3856,7 +3913,7 @@ textarea:focus {
 .video-overlay.show-icon .play-pause-icon {
     opacity: 1;
     transform: scale(1);
-    animation: playPauseAnim 0.6s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
+    animation: playPauseAnim 0.6s var(--ease-pop) forwards;
 }
 
 @keyframes playPauseAnim {
@@ -3933,7 +3990,7 @@ textarea:focus {
     transform: translateX(-50%) rotate(-90deg) translateX(-10px) scale(0.96);
     transition:
         opacity 0.2s ease 0.1s,
-        transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03) 0.1s,
+        transform 0.6s var(--ease-pop) 0.1s,
         visibility 0.2s 0.1s;
     padding: 0 12px;
     z-index: 20;
@@ -3984,7 +4041,7 @@ textarea:focus {
     /* override delay for instant appear */
     transition:
         opacity 0.2s ease 0s,
-        transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03) 0s,
+        transform 0.6s var(--ease-pop) 0s,
         visibility 0.2s 0s;
     pointer-events: auto;
 }
@@ -4242,7 +4299,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
     border: 1px solid var(--border-color);
     box-sizing: content-box;
     border-radius: var(--border-radius);
-    transition: opacity 0.2s ease, transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: opacity 0.2s ease, transform 0.6s var(--ease-pop);
     box-shadow: var(--skeuo-shadow-sm);
 }
 
@@ -4271,19 +4328,19 @@ input[type="number"]::-webkit-outer-spin-button:hover {
 }
 
 .number-input-display.animate-left .number-input-value.current {
-    animation: numberSlideOutLeft 180ms cubic-bezier(0.165, 0.84, 0.44, 1);
+    animation: numberSlideOutLeft 0.6s var(--ease-pop);
 }
 
 .number-input-display.animate-left .number-input-value.next {
-    animation: numberSlideInLeft 180ms cubic-bezier(0.165, 0.84, 0.44, 1);
+    animation: numberSlideInLeft 0.6s var(--ease-pop);
 }
 
 .number-input-display.animate-right .number-input-value.current {
-    animation: numberSlideOutRight 180ms cubic-bezier(0.165, 0.84, 0.44, 1);
+    animation: numberSlideOutRight 0.6s var(--ease-pop);
 }
 
 .number-input-display.animate-right .number-input-value.next {
-    animation: numberSlideInRight 180ms cubic-bezier(0.165, 0.84, 0.44, 1);
+    animation: numberSlideInRight 0.6s var(--ease-pop);
 }
 
 .number-input-text-box {
@@ -4826,7 +4883,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
 
     /* Content Transition */
     transform: scale(1) translateY(0);
-    transition: transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: transform 0.6s var(--ease-pop);
     /* Matched to dropdown */
 }
 
@@ -5022,7 +5079,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
     pointer-events: none;
     transition:
         opacity 0.2s ease,
-        transform 0.4s cubic-bezier(.24, 1.26, .44, 1.03),
+        transform 0.6s var(--ease-pop),
         visibility 0.2s;
     z-index: 1000;
     box-shadow: var(--skeuo-shadow-md);
@@ -5091,7 +5148,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
 }
 
 .text-loaded {
-    animation: text-pop-in 0.4s cubic-bezier(.24, 1.26, .44, 1.03) both;
+    animation: text-pop-in 0.6s var(--ease-pop) both;
 }
 
 /* Container Pop-in Animation */
@@ -5108,7 +5165,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
 }
 
 .container-loaded {
-    animation: container-pop-in 0.5s cubic-bezier(.24, 1.26, .44, 1.03) forwards;
+    animation: container-pop-in 0.6s var(--ease-pop) forwards;
 }
 
 @keyframes container-pop-out {
@@ -5139,7 +5196,7 @@ input[type="number"]::-webkit-outer-spin-button:hover {
     border-radius: var(--border-radius-sm);
     padding: 16px;
     cursor: pointer;
-    transition: all 0.4s cubic-bezier(.24, 1.26, .44, 1.03);
+    transition: all 0.6s var(--ease-pop);
     display: flex;
     flex-direction: column;
     gap: 6px;

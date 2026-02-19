@@ -279,8 +279,16 @@ export function setupCustomSelects() {
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(updateMenuOptions, 50);
         };
-        const observer = new MutationObserver(debouncedUpdate);
-        observer.observe(select, { childList: true });
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList') {
+                    debouncedUpdate();
+                } else if (mutation.type === 'attributes' && mutation.attributeName === 'disabled') {
+                    container.classList.toggle('disabled', select.disabled);
+                }
+            }
+        });
+        observer.observe(select, { childList: true, attributes: true, attributeFilter: ['disabled'] });
     });
 }
 
@@ -529,54 +537,76 @@ export function renderAudioTracks(audioTracks) {
 
     if (!audioTrackList) return;
 
-    if (audioTracks.length === 0) {
-        audioTrackList.innerHTML = `
-            <div class="empty-state-small">
-                <p style="color: var(--error); font-size: 0.8rem; margin: 10px 0; text-align: center;">
-                    ⚠️ All audio tracks removed. Output will have no audio.
-                </p>
-            </div>
-        `;
-        if (audioSelect) audioSelect.disabled = true;
-        if (audioBitrateSelect) audioBitrateSelect.disabled = true;
-    } else {
-        audioTrackList.innerHTML = audioTracks.map((track, index) => `
-            <div class="track-item">
-                <div class="track-item-info">
-                    <span class="track-title">${track.name}</span>
-                    <span class="track-meta">${track.isSource ? 'Original Track' : 'External Audio'}</span>
+    // Track previous count to only animate new items
+    const previousCount = audioTrackList.querySelectorAll('.track-item').length;
+
+    animateAutoHeight(audioTrackList, () => {
+        if (audioTracks.length === 0) {
+            audioTrackList.innerHTML = `
+                <div class="empty-state-small">
+                    <p style="color: var(--error); font-size: 0.8rem; margin: 10px 0; text-align: center;">
+                        ⚠️ All audio tracks removed. Output will have no audio.
+                    </p>
                 </div>
-                <button class="icon-btn" onclick="window.removeAudioTrack(${index})">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                </button>
-            </div>
-        `).join('');
-        if (audioSelect) audioSelect.disabled = false;
-        if (audioBitrateSelect) audioBitrateSelect.disabled = false;
-    }
+            `;
+            if (audioSelect) audioSelect.disabled = true;
+            if (audioBitrateSelect) audioBitrateSelect.disabled = true;
+        } else {
+            audioTrackList.innerHTML = audioTracks.map((track, index) => {
+                // Only animate items that are newly added (index >= previous count)
+                const shouldAnimate = index >= previousCount;
+                const animStyle = shouldAnimate
+                    ? `--item-index: ${index - previousCount}`
+                    : 'animation: none';
+                return `
+                <div class="track-item" style="${animStyle}">
+                    <div class="track-item-info">
+                        <span class="track-title">${track.name}</span>
+                        <span class="track-meta">${track.isSource ? 'Original Track' : 'External Audio'}</span>
+                    </div>
+                    <button class="remove-btn" onclick="window.removeAudioTrack(${index})">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            `}).join('');
+            if (audioSelect) audioSelect.disabled = false;
+            if (audioBitrateSelect) audioBitrateSelect.disabled = false;
+        }
+    });
 }
 
 export function renderSubtitleTracks(subtitleTracks) {
     const subtitleTrackList = get('subtitle-track-list');
     if (!subtitleTrackList) return;
 
-    subtitleTrackList.innerHTML = subtitleTracks.map((track, index) => `
-        <div class="track-item">
-            <div class="track-item-info">
-                <span class="track-title">${track.name}</span>
-                <span class="track-meta">External Subtitle</span>
+    // Track previous count to only animate new items
+    const previousCount = subtitleTrackList.querySelectorAll('.track-item').length;
+
+    animateAutoHeight(subtitleTrackList, () => {
+        subtitleTrackList.innerHTML = subtitleTracks.map((track, index) => {
+            // Only animate items that are newly added
+            const shouldAnimate = index >= previousCount;
+            const animStyle = shouldAnimate
+                ? `--item-index: ${index - previousCount}`
+                : 'animation: none';
+            return `
+            <div class="track-item" style="${animStyle}">
+                <div class="track-item-info">
+                    <span class="track-title">${track.name}</span>
+                    <span class="track-meta">External Subtitle</span>
+                </div>
+                <button class="remove-btn" onclick="window.removeSubtitleTrack(${index})">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
-            <button class="icon-btn" onclick="window.removeSubtitleTrack(${index})">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-            </button>
-        </div>
-    `).join('');
+        `}).join('');
+    });
 }
 
 export function formatBytes(bytes) {

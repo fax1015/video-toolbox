@@ -1,6 +1,6 @@
 // Queue Management Module
 
-import { get, showPopup, showConfirm } from './ui-utils.js';
+import { get, showPopup, showConfirm, animateAutoHeight } from './ui-utils.js';
 import { showView, toggleSidebar, resetNav } from './ui-utils.js';
 import { MAX_QUEUE_SIZE, BUILT_IN_PRESETS } from '../constants.js';
 import * as state from './state.js';
@@ -20,7 +20,7 @@ export function addToQueue(options, taskType = 'encode') {
             name = options.input.split(/[\\/]/).pop();
         }
     }
-    
+
     const preset = taskType === 'encode' ? (state.currentPresetUsed || null) : null;
     state.encodingQueue.push({
         id,
@@ -34,7 +34,7 @@ export function addToQueue(options, taskType = 'encode') {
         presetUsed: preset,
         isModified: taskType === 'encode' ? state.isCurrentSettingsModified : false
     });
-    
+
     updateQueueUI();
 }
 
@@ -51,20 +51,20 @@ export function updateQueueUI() {
 export function updateQueueProgress() {
     const queueList = get('queue-list');
     if (!queueList || !state.currentlyEncodingItemId) return;
-    
+
     const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
     if (!item) return;
-    
+
     const itemEl = queueList.querySelector(`[data-id="${item.id}"]`);
     if (!itemEl) return;
-    
+
     const statusEl = itemEl.querySelector('.queue-item-status');
     const progressEl = itemEl.querySelector('.queue-progress-bar');
-    
+
     if (statusEl) {
-        const action = item.taskType === 'trim' ? 'Trimming' : 
-                      item.taskType === 'extract' ? 'Extracting' : 
-                      item.taskType === 'download' ? 'Downloading' : 'Encoding';
+        const action = item.taskType === 'trim' ? 'Trimming' :
+            item.taskType === 'extract' ? 'Extracting' :
+                item.taskType === 'download' ? 'Downloading' : 'Encoding';
         statusEl.textContent = `${action}... ${item.progress}%`;
     }
     if (progressEl) progressEl.style.width = `${item.progress}%`;
@@ -85,7 +85,7 @@ function formatPresetName(name) {
 
     // Strip group prefixes (general-, web-, device-, mkv-, production-)
     let formatted = name.replace(/^(general|web|device|mkv|production)-/, '');
-    
+
     for (const [key, value] of Object.entries(specialCases)) {
         if (formatted.startsWith(key)) {
             formatted = formatted.replace(key, value);
@@ -123,50 +123,60 @@ export function renderQueue() {
         return;
     }
 
-    queueList.innerHTML = state.encodingQueue.map((item) => {
-        if (item.status && item.state !== item.status) {
-            item.state = item.status;
-        }
-        const currentStatus = item.status || item.state || 'pending';
-        const taskLabel = getTaskLabel(item);
-        let statusText = `${formatStatusLabel(currentStatus)} · ${taskLabel}`;
+    // Track previous count so we only animate newly added items
+    const previousCount = queueList.querySelectorAll('.queue-item').length;
 
-        if (item.taskType === 'encode') {
-            const presetLabel = item.preset ? formatPresetName(item.preset) : 'None';
-            statusText = `${statusText} · ${presetLabel}`;
-        }
-        
-        const encodingStatus = item.status === 'encoding'
-            ? (item.taskType === 'trim' ? `Trimming... ${item.progress}%` : 
-               item.taskType === 'extract' ? `Extracting... ${item.progress}%` : 
-               item.taskType === 'download' ? `Downloading... ${item.progress}%` : 
-               `Encoding... ${item.progress}%`)
-            : null;
+    animateAutoHeight(queueList, () => {
+        queueList.innerHTML = state.encodingQueue.map((item, index) => {
+            if (item.status && item.state !== item.status) {
+                item.state = item.status;
+            }
+            const currentStatus = item.status || item.state || 'pending';
+            const taskLabel = getTaskLabel(item);
+            let statusText = `${formatStatusLabel(currentStatus)} · ${taskLabel}`;
 
-        return `
-        <div class="queue-item container-loaded ${item.id === state.currentlyEncodingItemId ? 'active' : ''} ${item.status === 'completed' ? 'completed' : ''}" 
-             data-id="${item.id}" 
-             data-task-type="${item.taskType || 'encode'}"
-             onclick="window.loadQueueItem('${item.id}')">
-            <div class="queue-item-info">
-                <div class="queue-item-name">${item.name}</div>
-                <div class="queue-item-status" data-animate-number>${encodingStatus !== null ? encodingStatus : statusText}</div>
+            if (item.taskType === 'encode') {
+                const presetLabel = item.preset ? formatPresetName(item.preset) : 'None';
+                statusText = `${statusText} · ${presetLabel}`;
+            }
+
+            const encodingStatus = item.status === 'encoding'
+                ? (item.taskType === 'trim' ? `Trimming... ${item.progress}%` :
+                    item.taskType === 'extract' ? `Extracting... ${item.progress}%` :
+                        item.taskType === 'download' ? `Downloading... ${item.progress}%` :
+                            `Encoding... ${item.progress}%`)
+                : null;
+
+            // Only animate items that are newly added
+            const shouldAnimate = index >= previousCount;
+            const animStyle = shouldAnimate ? `--item-index: ${index - previousCount}` : 'animation: none';
+
+            return `
+            <div class="queue-item ${item.id === state.currentlyEncodingItemId ? 'active' : ''} ${item.status === 'completed' ? 'completed' : ''} ${item.removing ? 'removing' : ''}" 
+                 data-id="${item.id}" 
+                 data-task-type="${item.taskType || 'encode'}"
+                 style="${animStyle}"
+                 onclick="window.loadQueueItem('${item.id}')">
+                <div class="queue-item-info">
+                    <div class="queue-item-name">${item.name}</div>
+                    <div class="queue-item-status" data-animate-number>${encodingStatus !== null ? encodingStatus : statusText}</div>
+                </div>
+                ${item.status === 'encoding' || item.status === 'completed' ? `
+                <div class="queue-item-progress">
+                    <div class="queue-progress-bar" style="width: ${item.progress}%"></div>
+                </div>
+                ` : ''}
+                <button class="remove-btn" onclick="event.stopPropagation(); window.removeQueueItem('${item.id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
-            ${item.status === 'encoding' || item.status === 'completed' ? `
-            <div class="queue-item-progress">
-                <div class="queue-progress-bar" style="width: ${item.progress}%"></div>
-            </div>
-            ` : ''}
-            <button class="queue-item-remove" onclick="event.stopPropagation(); window.removeQueueItem('${item.id}')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-            </button>
-        </div>
-        `;
-    }).join('');
-}
+            `;
+        }).join('');
+    });
+} 
 
 export function processQueue() {
     if (!state.isQueueRunning) return;
@@ -223,9 +233,9 @@ export function updateQueueStatusUI() {
     const pauseQueueIcon = get('pause-queue-icon');
     const pauseQueueIcon2 = get('pause-queue-icon-2');
     const startQueueText = get('start-queue-text');
-    
+
     if (!startQueueBtn) return;
-    
+
     if (state.isQueueRunning) {
         if (startQueueIcon) startQueueIcon.classList.add('hidden');
         if (pauseQueueIcon) pauseQueueIcon.classList.remove('hidden');
@@ -307,25 +317,88 @@ export function setupQueueHandlers() {
     // Global queue item handlers
     window.removeQueueItem = (id) => {
         const index = state.encodingQueue.findIndex(item => item.id === id);
-        if (index !== -1) {
-            if (id === state.currentlyEncodingItemId) {
-                window.electron.cancelEncode();
-                state.setCurrentlyEncodingItemId(null);
-                const item = state.encodingQueue[index];
-                if (item) {
-                    item.status = 'pending';
-                    item.progress = 0;
-                }
-                toggleSidebar(false);
-            } else {
-                state.encodingQueue.splice(index, 1);
+        if (index === -1) return;
+
+        // If currently encoding, cancel and reset
+        if (id === state.currentlyEncodingItemId) {
+            window.electron.cancelEncode();
+            state.setCurrentlyEncodingItemId(null);
+            const item = state.encodingQueue[index];
+            if (item) {
+                item.status = 'pending';
+                item.progress = 0;
             }
+            toggleSidebar(false);
             updateQueueUI();
+            return;
+        }
+
+        // For non-active items, prefer animating the existing DOM node directly to avoid re-render jumps
+        const item = state.encodingQueue[index];
+        if (!item) return;
+        if (item.removing) return; // already in progress
+
+        // Mark removing in state so if a re-render happens mid-animation the class will be preserved
+        item.removing = true;
+
+        const queueList = get('queue-list');
+        const itemEl = queueList?.querySelector(`[data-id="${id}"]`);
+
+        const finishRemoval = () => {
+            // Finally remove from state and re-render
+            const idx = state.encodingQueue.findIndex(i => i.id === id);
+            if (idx !== -1) state.encodingQueue.splice(idx, 1);
+            updateQueueUI();
+
             if (state.encodingQueue.length === 0) {
                 state.setQueueRunning(false);
                 updateQueueStatusUI();
                 toggleSidebar(false);
             }
+        };
+
+        // If the node exists in the DOM, run the pop-out animation then collapse, letting other items move smoothly
+        if (itemEl) {
+            // Add class directly to avoid a full re-render replacing the node mid-animation
+            // Clear inline animation overrides so the exit animation can run.
+            itemEl.style.animation = '';
+            itemEl.classList.add('removing');
+            itemEl.style.pointerEvents = 'none';
+
+            const onAnimationEnd = (event) => {
+                if (event.target !== itemEl) return;
+                if (event.animationName !== 'item-pop-out') return;
+                itemEl.removeEventListener('animationend', onAnimationEnd);
+
+                // Prepare for collapsing transition
+                itemEl.style.maxHeight = `${itemEl.scrollHeight}px`;
+
+                requestAnimationFrame(() => {
+                    itemEl.classList.add('collapsing');
+                    itemEl.style.maxHeight = '0px';
+
+                    const onTransitionEnd = () => {
+                        itemEl.removeEventListener('transitionend', onTransitionEnd);
+                        finishRemoval();
+                    };
+
+                    itemEl.addEventListener('transitionend', onTransitionEnd);
+                });
+            };
+
+            itemEl.addEventListener('animationend', onAnimationEnd);
+
+            // Fallback: if animationend doesn't fire (node replaced), ensure removal after a safe timeout
+            setTimeout(() => {
+                // If the item is still present, try to finish removal
+                if (state.encodingQueue.find(i => i.id === id)) finishRemoval();
+            }, 700);
+        } else {
+            // If no node found, update the UI so the removing class will be applied on next render and remove after timeout
+            updateQueueUI();
+            setTimeout(() => {
+                if (state.encodingQueue.find(i => i.id === id)) finishRemoval();
+            }, 700);
         }
     };
 }

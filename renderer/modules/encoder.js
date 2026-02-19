@@ -108,9 +108,9 @@ export function getOptionsFromUI() {
     const audioBitrateSelect = get('audio-bitrate');
     const customFfmpegArgs = get('custom-ffmpeg-args');
     const outputFolderInput = get('output-folder');
-    
+
     const rateMode = document.querySelector('input[name="rate-mode"]:checked')?.value || 'crf';
-    
+
     return {
         input: state.currentFilePath,
         format: formatSelect ? formatSelect.value : state.appSettings.defaultFormat,
@@ -208,17 +208,17 @@ export async function handleFileSelection(filePath) {
     const addQueueBtn = get('add-queue-btn');
     const chaptersInfo = get('chapters-info');
     const chapterImportZone = get('chapter-import-zone');
-    
+
     state.setCurrentFile(filePath);
     state.setCurrentEditingQueueId(null);
     state.setAudioTracks([{ isSource: true, name: 'Source Audio' }]);
     state.setSubtitleTracks([]);
     state.setChaptersFile(null);
     state.setCurrentPreset(null, null, false);
-    
+
     renderAudioTracks(state.audioTracks);
     renderSubtitleTracks(state.subtitleTracks);
-    
+
     if (chaptersInfo) chaptersInfo.classList.add('hidden');
     if (chapterImportZone) chapterImportZone.classList.remove('hidden');
 
@@ -245,7 +245,7 @@ export async function handleFileSelection(filePath) {
         if (resolutionEl) resolutionEl.textContent = metadata.resolution;
         if (durationEl) durationEl.textContent = metadata.duration;
         if (bitrateEl) bitrateEl.textContent = metadata.bitrate;
-        
+
         state.setCurrentFile(
             filePath,
             metadata.durationSeconds || 0,
@@ -311,7 +311,7 @@ export function updateEstFileSize() {
         const pixelCount = width * height;
         const basePixels = 1920 * 1080;
         const baseFps = 30;
-        const baseBitrate = 4000; 
+        const baseBitrate = 4000;
 
         const resFactor = pixelCount / basePixels;
         const fpsFactor = fps / baseFps;
@@ -382,7 +382,7 @@ export function updatePresetStatus() {
             fps: currentSettings.fps,
             twoPass: currentSettings.twoPass
         });
-        
+
         const simplifiedPreset = JSON.stringify({
             format: presetSettings.format,
             codec: presetSettings.codec,
@@ -422,7 +422,7 @@ export function updatePresetStatus() {
             }
         }
     }
-    
+
     const currentPresetName = get('current-preset-name');
     if (currentPresetName) {
         let displayName = 'Default';
@@ -444,13 +444,13 @@ export function updatePresetStatus() {
             updateQueueUI();
         }
     }
-    
+
     updateEstFileSize();
 }
 
 export function applyPreset(settings, name) {
     isApplyingPreset = true;
-    
+
     const formatSelect = get('format-select');
     const codecSelect = get('codec-select');
     const presetSelect = get('preset-select');
@@ -500,7 +500,7 @@ export function applyPreset(settings, name) {
     }
 
     state.setCurrentPreset(name, { ...settings }, false);
-    
+
     isApplyingPreset = false;
     updatePresetStatus();
 }
@@ -538,7 +538,7 @@ export async function handleFolderSelection(folderPath) {
         const effectiveAudioTracks = state.audioTracks.length > 0
             ? [...state.audioTracks]
             : (state.currentFilePath ? [] : defaultAudioTracks);
-        
+
         files.forEach(file => {
             const options = {
                 input: file,
@@ -667,26 +667,26 @@ export function setupEncoderHandlers() {
     if (convertBtn) {
         convertBtn.addEventListener('click', () => {
             if (!state.currentFilePath) return;
-            
+
             state.setExtracting(false);
             state.setTrimming(false);
-            
+
             const progressTitle = get('progress-title');
             const completeTitle = get('complete-title');
             const progressFilename = get('progress-filename');
             const progressView = get('progress-view');
-            
+
             if (progressTitle) progressTitle.textContent = 'Encoding in Progress';
             if (completeTitle) completeTitle.textContent = 'Encoding Complete!';
 
             const options = getOptionsFromUI();
 
             if (progressFilename) progressFilename.textContent = state.currentFilePath.split(/[\\/]/).pop();
-            
+
             showView(progressView);
             state.setEncodingState(true);
             state.setCancelled(false);
-            
+
             window.electron.startEncode(options);
         });
     }
@@ -726,13 +726,62 @@ export function setupEncoderHandlers() {
 
     // Global window handlers
     window.removeAudioTrack = (index) => {
-        state.audioTracks.splice(index, 1);
-        renderAudioTracks(state.audioTracks);
+        const audioTrackList = get('audio-track-list');
+        const trackItems = audioTrackList?.querySelectorAll('.track-item');
+        const trackItem = trackItems?.[index];
+
+        if (trackItem) {
+            trackItem.classList.add('removing');
+            // Delay the collapse to let the exit animation play first
+            setTimeout(() => trackItem.classList.add('collapsing'), 100);
+
+            trackItem.addEventListener('animationend', () => {
+                state.audioTracks.splice(index, 1);
+                trackItem.remove();
+
+                // Update onclick indices for remaining items
+                const remainingItems = audioTrackList.querySelectorAll('.track-item');
+                remainingItems.forEach((item, i) => {
+                    const btn = item.querySelector('.remove-btn');
+                    if (btn) btn.setAttribute('onclick', `window.removeAudioTrack(${i})`);
+                });
+
+                // Show empty state if no tracks left
+                if (state.audioTracks.length === 0) {
+                    renderAudioTracks(state.audioTracks);
+                }
+            }, { once: true });
+        } else {
+            state.audioTracks.splice(index, 1);
+            renderAudioTracks(state.audioTracks);
+        }
     };
 
     window.removeSubtitleTrack = (index) => {
-        state.subtitleTracks.splice(index, 1);
-        renderSubtitleTracks(state.subtitleTracks);
+        const subtitleTrackList = get('subtitle-track-list');
+        const trackItems = subtitleTrackList?.querySelectorAll('.track-item');
+        const trackItem = trackItems?.[index];
+
+        if (trackItem) {
+            trackItem.classList.add('removing');
+            // Delay the collapse to let the exit animation play first
+            setTimeout(() => trackItem.classList.add('collapsing'), 100);
+
+            trackItem.addEventListener('animationend', () => {
+                state.subtitleTracks.splice(index, 1);
+                trackItem.remove();
+
+                // Update onclick indices for remaining items
+                const remainingItems = subtitleTrackList.querySelectorAll('.track-item');
+                remainingItems.forEach((item, i) => {
+                    const btn = item.querySelector('.remove-btn');
+                    if (btn) btn.setAttribute('onclick', `window.removeSubtitleTrack(${i})`);
+                });
+            }, { once: true });
+        } else {
+            state.subtitleTracks.splice(index, 1);
+            renderSubtitleTracks(state.subtitleTracks);
+        }
     };
 
     if (subtitleDropZone) {
@@ -814,7 +863,7 @@ export function setupEncoderHandlers() {
     if (encoderView) {
         encoderView.addEventListener('change', (e) => {
             if (isApplyingPreset) return; // Skip updates while applying preset
-            
+
             const id = e.target.id;
             const name = e.target.name;
 
@@ -848,7 +897,7 @@ export function setupEncoderHandlers() {
 
         encoderView.addEventListener('input', (e) => {
             if (isApplyingPreset) return; // Skip updates while applying preset
-            
+
             const id = e.target.id;
             if (id === 'crf-slider') {
                 const val = get('crf-value');
@@ -934,6 +983,23 @@ export function setupEncoderHandlers() {
         revertBtn.addEventListener('click', async () => {
             const confirmReset = await showConfirm('Revert encoding settings for this video to defaults?');
             if (!confirmReset) return;
+
+            // Reset audio tracks to default (source audio only)
+            state.audioTracks.length = 0;
+            state.audioTracks.push({ isSource: true, name: 'Source Audio' });
+            renderAudioTracks(state.audioTracks);
+
+            // Reset subtitle tracks
+            state.subtitleTracks.length = 0;
+            renderSubtitleTracks(state.subtitleTracks);
+
+            // Reset chapters
+            const chaptersInfo = get('chapters-info');
+            const chapterImportZone = get('chapter-import-zone');
+            state.setChaptersFile(null);
+            if (chaptersInfo) chaptersInfo.classList.add('hidden');
+            if (chapterImportZone) chapterImportZone.classList.remove('hidden');
+
             applyPreset(BUILT_IN_PRESETS['general-fast-720p'], 'Default');
         });
     }
@@ -1009,7 +1075,7 @@ function handleChapterFile(path) {
     const chaptersFilename = get('chapters-filename');
     const chaptersInfo = get('chapters-info');
     const chapterImportZone = get('chapter-import-zone');
-    
+
     state.setChaptersFile(path);
     if (chaptersFilename) chaptersFilename.textContent = path.split(/[\\/]/).pop();
     if (chaptersInfo) chaptersInfo.classList.remove('hidden');
@@ -1030,7 +1096,7 @@ function updateQueueItem(id, options) {
             state.encodingQueue[index].state = 'pending';
             state.encodingQueue[index].progress = 0;
         }
-        
+
         updateQueueUI();
     }
     state.setCurrentEditingQueueId(null);
