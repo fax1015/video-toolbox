@@ -176,9 +176,7 @@ const thumbnailCache = {
     }
 };
 
-let filmstripData = null;
-let playbackRafId = null;
-let cachedTrackWidth = 0;
+
 let trimDragging = null;
 let trimDragStartX = 0;
 let trimDragInitialStart = 0;
@@ -283,7 +281,7 @@ async function loadTrimWaveform(filePath) {
 
     const cached = waveformCache.get(cacheKey);
     if (cached) {
-        console.log('Using cached waveform, length:', cached.length);
+        if (window.api?.logInfo) window.api.logInfo('Using cached waveform, length:', cached.length); else console.log('Using cached waveform, length:', cached.length);
         trimWaveformImg.src = 'data:image/png;base64,' + cached;
         trimWaveformWrap.classList.add('has-waveform');
         return;
@@ -299,7 +297,7 @@ async function loadTrimWaveform(filePath) {
             paletteColor: accentHex
         });
 
-        console.log('Waveform loaded successfully, mode:', requestMode, 'length:', waveformBase64?.length);
+        if (window.api?.logInfo) window.api.logInfo('Waveform loaded successfully, mode:', requestMode, 'length:', waveformBase64?.length); else console.log('Waveform loaded successfully, mode:', requestMode, 'length:', waveformBase64?.length);
 
         if (waveformBase64 && state.trimFilePath === filePath && waveformMode === requestMode) {
             waveformCache.set(cacheKey, waveformBase64);
@@ -310,8 +308,8 @@ async function loadTrimWaveform(filePath) {
             trimWaveformImg.style.display = 'block';
         }
     } catch (e) {
-        console.error('Waveform generation failed:', e);
-        console.error('Waveform request params:', { filePath, mode: requestMode, width: waveformOptions.width, height: waveformOptions.height, palette: waveformOptions.palette, paletteColor: accentHex });
+        if (window.api?.logError) window.api.logError('Waveform generation failed:', e); else console.error('Waveform generation failed:', e);
+        if (window.api?.logError) window.api.logError('Waveform request params:', { filePath, mode: requestMode, width: waveformOptions.width, height: waveformOptions.height, palette: waveformOptions.palette, paletteColor: accentHex }); else console.error('Waveform request params:', { filePath, mode: requestMode, width: waveformOptions.width, height: waveformOptions.height, palette: waveformOptions.palette, paletteColor: accentHex });
 
         // Show error state in waveform container
         trimWaveformWrap.classList.remove('has-waveform');
@@ -394,7 +392,7 @@ async function resolveBitrateKbps(filePath, metadata) {
             return Math.round(bitsPerSecond / 1000);
         }
     } catch (err) {
-        console.warn('Failed to resolve bitrate:', err);
+        if (window.api?.logWarn) window.api.logWarn('Failed to resolve bitrate:', err); else console.warn('Failed to resolve bitrate:', err);
     }
 
     return 0;
@@ -500,7 +498,7 @@ export async function handleTrimFileSelection(filePath) {
     const trimFileDuration = get('trim-file-duration');
     const trimWaveformWrap = get('trim-waveform-wrap');
     const trimWaveformImg = get('trim-waveform-img');
-    const trimDashboard = get('trim-dashboard');
+
     const trimAddQueueBtn = get('trim-add-queue-btn');
     const trimStartInput = get('trim-start');
     const trimEndInput = get('trim-end');
@@ -544,7 +542,7 @@ export async function handleTrimFileSelection(filePath) {
     if (trimVideoPreview) {
         // Use convertFileSrc for Tauri
         const videoSrc = window.api.convertFileSrc(filePath);
-        console.log('Setting video src:', videoSrc);
+        if (window.api?.logInfo) window.api.logInfo('Setting video src:', videoSrc); else console.log('Setting video src:', videoSrc);
 
         // Configure video element
         trimVideoPreview.src = videoSrc;
@@ -554,13 +552,13 @@ export async function handleTrimFileSelection(filePath) {
 
         // Add error handling for video loading
         trimVideoPreview.onerror = function (e) {
-            console.error('Video preview load error:', e);
-            console.error('Video src:', trimVideoPreview.src);
-            console.error('Video error code:', trimVideoPreview.error?.code, trimVideoPreview.error?.message);
+            if (window.api?.logError) window.api.logError('Video preview load error:', e); else console.error('Video preview load error:', e);
+            if (window.api?.logError) window.api.logError('Video src:', trimVideoPreview.src); else console.error('Video src:', trimVideoPreview.src);
+            if (window.api?.logError) window.api.logError('Video error code:', trimVideoPreview.error?.code, trimVideoPreview.error?.message); else console.error('Video error code:', trimVideoPreview.error?.code, trimVideoPreview.error?.message);
         };
 
         trimVideoPreview.onloadeddata = function () {
-            console.log('Video preview loaded successfully, duration:', trimVideoPreview.duration);
+            if (window.api?.logInfo) window.api.logInfo('Video preview loaded successfully, duration:', trimVideoPreview.duration); else console.log('Video preview loaded successfully, duration:', trimVideoPreview.duration);
         };
 
         // Try to load the video
@@ -593,7 +591,7 @@ export async function handleTrimFileSelection(filePath) {
         await loadTrimWaveform(filePath);
         preloadTrimWaveforms(filePath);
     } catch (e) {
-        console.error('Failed to load trim file:', e);
+        if (window.api?.logError) window.api.logError('Failed to load trim file:', e); else console.error('Failed to load trim file:', e);
         if (trimFileDuration) trimFileDuration.textContent = 'Unknown';
         state.setTrimTime(0, 0, 0);
         // Update estimated file size to show error state when metadata fails
@@ -611,7 +609,7 @@ export async function handleTrimFileSelection(filePath) {
             count: 150
         }).then(data => {
             if (data && state.trimFilePath === filePath) {
-                console.log('Thumbnails loaded:', data.count, 'frames');
+                if (window.api?.logInfo) window.api.logInfo('Thumbnails loaded:', data.count, 'frames'); else console.log('Thumbnails loaded:', data.count, 'frames');
                 thumbnailCache.set(filePath, data);
                 filmstripData = data;
 
@@ -624,7 +622,7 @@ export async function handleTrimFileSelection(filePath) {
             }
             endTrimLoading(loadingToken);
         }).catch(e => {
-            console.error('Thumbnail generation failed:', e);
+            if (window.api?.logError) window.api.logError('Thumbnail generation failed:', e); else console.error('Thumbnail generation failed:', e);
             thumbnailCache.clear();
             endTrimLoading(loadingToken);
         });
@@ -950,7 +948,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                 try {
                     handleLeft.setPointerCapture(e.pointerId);
                 } catch (err) {
-                    console.warn('Failed to capture pointer on left handle', err);
+                    if (window.api?.logWarn) window.api.logWarn('Failed to capture pointer on left handle', err); else console.warn('Failed to capture pointer on left handle', err);
                 }
             }
             trimDragging = 'start';
@@ -967,7 +965,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                 try {
                     handleRight.setPointerCapture(e.pointerId);
                 } catch (err) {
-                    console.warn('Failed to capture pointer on right handle', err);
+                    if (window.api?.logWarn) window.api.logWarn('Failed to capture pointer on right handle', err); else console.warn('Failed to capture pointer on right handle', err);
                 }
             }
             trimDragging = 'end';
@@ -984,7 +982,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                 try {
                     activeSegment.setPointerCapture(e.pointerId);
                 } catch (err) {
-                    console.warn('Failed to capture pointer on active segment', err);
+                    if (window.api?.logWarn) window.api.logWarn('Failed to capture pointer on active segment', err); else console.warn('Failed to capture pointer on active segment', err);
                 }
             }
             trimDragging = 'range';
@@ -1103,7 +1101,7 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
         }
         if (!videoPreview) return;
         if (videoPreview.paused) {
-            videoPreview.play().catch(e => console.error('Play failed:', e));
+            videoPreview.play().catch(e => { if (window.api?.logError) window.api.logError('Play failed:', e); else console.error('Play failed:', e); });
             showPlayPauseAnimation(true);
         } else {
             videoPreview.pause();
@@ -1124,7 +1122,7 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
             e.stopPropagation();
             if (!videoPreview) return;
             if (videoPreview.paused) {
-                videoPreview.play().catch(e => console.error('Play failed:', e));
+                videoPreview.play().catch(e => { if (window.api?.logError) window.api.logError('Play failed:', e); else console.error('Play failed:', e); });
             } else {
                 videoPreview.pause();
             }

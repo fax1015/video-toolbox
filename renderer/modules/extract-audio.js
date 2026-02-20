@@ -36,7 +36,7 @@ export async function handleExtractFileSelection(filePath, options = {}) {
     const extractMp3ModeSelect = get('extract-mp3-mode');
     const extractMp3QualitySelect = get('extract-mp3-quality');
     const extractFlacLevelSelect = get('extract-flac-level');
-    const extractAudioDashboard = get('extract-audio-dashboard');
+
     const extractAddQueueBtn = get('extract-add-queue-btn');
 
     extractFilePath = filePath;
@@ -124,18 +124,16 @@ function getExtractOptionsFromUI() {
 }
 
 export function setupExtractAudioHandlers() {
-    const extractFilenameEl = get('extract-filename');
-    const extractFileIcon = get('extract-file-icon');
-    const extractFileDuration = get('extract-file-duration');
+
     const extractAudioFormatSelect = get('extract-audio-format');
-    const extractAudioBitrateSelect = get('extract-audio-bitrate');
+
     const extractMp3ModeSelect = get('extract-mp3-mode');
     const extractAddQueueBtn = get('extract-add-queue-btn');
-    const extractBitrateGroup = get('extract-bitrate-group');
+
     const extractAudioBtn = get('extract-audio-btn');
     const extractBackBtn = get('extract-back-btn');
     const extractAudioDropZone = get('extract-audio-drop-zone');
-    const extractAudioDashboard = get('extract-audio-dashboard');
+
     const progressTitle = get('progress-title');
     const progressFilename = get('progress-filename');
     const progressView = get('progress-view');
@@ -227,7 +225,7 @@ export function setupExtractAudioHandlers() {
             if (progressFilename) progressFilename.textContent = extractFilePath.split(/[\\/]/).pop();
             resetProgress();
             showView(progressView);
-            
+
             const toggleSidebar = (disabled) => {
                 const navItems = document.querySelectorAll('.nav-item');
                 navItems.forEach(btn => {

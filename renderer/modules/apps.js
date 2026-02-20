@@ -68,10 +68,10 @@ function updatePinnedApps() {
 }
 
 function launchTool(toolId) {
-    console.log('Launching tool:', toolId);
+    if (window.api?.logInfo) window.api.logInfo('Launching tool:', toolId); else console.log('Launching tool:', toolId);
     const tool = TOOL_REGISTRY.find(t => t.id === toolId);
     if (!tool) {
-        console.error('Tool not found:', toolId);
+        if (window.api?.logError) window.api.logError('Tool not found:', toolId); else console.error('Tool not found:', toolId);
         return;
     }
 
@@ -95,7 +95,7 @@ function launchTool(toolId) {
             if (navItem) navItem.classList.add('active');
             showView(view);
         } else {
-            console.error('View element not found:', tool.viewId);
+            if (window.api?.logError) window.api.logError('View element not found:', tool.viewId); else console.error('View element not found:', tool.viewId);
         }
     }
 }

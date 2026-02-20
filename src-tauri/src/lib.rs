@@ -1948,6 +1948,17 @@ async fn open_folder(folder_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn frontend_log(level: String, message: String) {
+    match level.as_str() {
+        "info" => info!("{}", message),
+        "warn" => log::warn!("{}", message),
+        "error" => error!("{}", message),
+        "debug" => log::debug!("{}", message),
+        _ => info!("{}", message),
+    }
+}
+
+#[tauri::command]
 async fn open_external(url: String) -> Result<(), String> {
     info!("open_external called for: {}", url);
     
@@ -2136,6 +2147,7 @@ pub fn run() {
             open_external,
             // PDF commands
             convert_images_to_pdf,
+            frontend_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

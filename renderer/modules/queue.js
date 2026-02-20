@@ -1,7 +1,7 @@
 // Queue Management Module
 
 import { get, showPopup, showConfirm, animateAutoHeight } from './ui-utils.js';
-import { showView, toggleSidebar, resetNav } from './ui-utils.js';
+import { toggleSidebar } from './ui-utils.js';
 import { MAX_QUEUE_SIZE, BUILT_IN_PRESETS } from '../constants.js';
 import * as state from './state.js';
 
@@ -176,7 +176,7 @@ export function renderQueue() {
             `;
         }).join('');
     });
-} 
+}
 
 export function processQueue() {
     if (!state.isQueueRunning) return;
@@ -309,7 +309,7 @@ export function setupQueueHandlers() {
                     addToQueue(options);
                 }
             } catch (err) {
-                console.error('Error adding to queue:', err);
+                if (window.api?.logError) window.api.logError('Error adding to queue:', err); else console.error('Error adding to queue:', err);
             }
         });
     }

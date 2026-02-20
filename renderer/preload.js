@@ -2,7 +2,7 @@
 // Uses the global __TAURI__ object to access Tauri core and event APIs
 
 const { invoke } = window.__TAURI__.core;
-const { listen, once } = window.__TAURI__.event;
+const { listen } = window.__TAURI__.event;
 
 // Track event listeners for cleanup
 const eventListeners = {
@@ -141,6 +141,18 @@ window.api = {
     },
 
     // ==================== Utility APIs ====================
+    logInfo: (...args) => {
+        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        invoke('frontend_log', { level: 'info', message: msg }).catch(() => { });
+    },
+    logWarn: (...args) => {
+        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        invoke('frontend_log', { level: 'warn', message: msg }).catch(() => { });
+    },
+    logError: (...args) => {
+        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        invoke('frontend_log', { level: 'error', message: msg }).catch(() => { });
+    },
     // Remove event listener (for cleanup)
     removeListener: (eventName, handler) => {
         if (eventListeners[eventName]) {

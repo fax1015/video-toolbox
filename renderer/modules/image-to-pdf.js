@@ -13,7 +13,7 @@ let isDragging = false;
 let compressionQuality = 80;
 let upscaleToMax = false;
 const EDGE_SIZE = 140;
-const EDGE_OVERFLOW = 90;
+
 
 // Custom drag state (mouse-based implementation for WebView2 compatibility)
 let dragGhost = null;
@@ -27,12 +27,8 @@ let sidebarDragGhost = null;
 let isSidebarDragging = false;
 
 // Image editing state
-let currentEditImage = null;
-let currentRotation = 0;
-let cropMode = false;
-let cropData = { x: 0, y: 0, width: 0, height: 0 };
-let cropDragHandle = null;
-let cropDragStart = { x: 0, y: 0 };
+
+
 
 function isSupportedImage(path) {
     if (!path || typeof path !== 'string') return false;
@@ -67,11 +63,11 @@ function uniqueAppendImages(paths) {
                     img.mtimeMs = result.mtimeMs || 0;
                     updateEstSize();
                 } else if (!result) {
-                    console.warn('Failed to get image info for:', path);
+                    if (window.api?.logWarn) window.api.logWarn('Failed to get image info for:', path); else console.warn('Failed to get image info for:', path);
                     updateEstSize();
                 }
             }).catch(err => {
-                console.warn('Error getting image info:', err);
+                if (window.api?.logWarn) window.api.logWarn('Error getting image info:', err); else console.warn('Error getting image info:', err);
                 // Update estimate even on error
                 updateEstSize();
             });
@@ -137,7 +133,7 @@ export function updateEstSize() {
 function toFileUrl(filePath) {
     if (!filePath) return '';
     const url = window.api.convertFileSrc(filePath);
-    console.log('[ImageToPDF] Generated asset URL:', url, 'for path:', filePath);
+    if (window.api?.logInfo) window.api.logInfo('[ImageToPDF] Generated asset URL:', url, 'for path:', filePath); else console.log('[ImageToPDF] Generated asset URL:', url, 'for path:', filePath);
     return url;
 }
 
@@ -149,16 +145,10 @@ function openImageViewer(image) {
     const infoEl = get('image-viewer-info');
     if (!overlay || !imgEl || !nameEl || !infoEl || !image) return;
 
-    // Store current image for editing
-    currentEditImage = image;
-    currentRotation = 0;
-    cropMode = false;
-    
-    // Reset rotation class
-    imgEl.classList.remove('rotated-90', 'rotated-180', 'rotated-270');
+
 
     const assetUrl = toFileUrl(image.path);
-    console.log('[ImageToPDF] Opening viewer - asset URL:', assetUrl);
+    if (window.api?.logInfo) window.api.logInfo('[ImageToPDF] Opening viewer - asset URL:', assetUrl); else console.log('[ImageToPDF] Opening viewer - asset URL:', assetUrl);
     imgEl.src = assetUrl;
     imgEl.alt = image.name || '';
     nameEl.textContent = image.name || '';
@@ -167,7 +157,7 @@ function openImageViewer(image) {
 
     // Add error handling
     imgEl.onerror = () => {
-        console.error('[ImageToPDF] Failed to load image in viewer:', image.path);
+        if (window.api?.logError) window.api.logError('[ImageToPDF] Failed to load image in viewer:', image.path); else console.error('[ImageToPDF] Failed to load image in viewer:', image.path);
         infoEl.textContent = 'Failed to load image';
     };
 
@@ -193,9 +183,6 @@ function openImageViewer(image) {
         void infoEl.offsetWidth;
         infoEl.classList.add('text-loaded');
         infoEl.style.animationDelay = '300ms';
-        
-        // Initialize crop data
-        initCropOverlay();
     };
 
     if (window.api?.getImageInfo) {
@@ -214,9 +201,10 @@ function openImageViewer(image) {
             if (info.sizeBytes) tags.push({ label: formatBytes(info.sizeBytes), animate: true });
 
             if (tagsEl) {
+                const escapeHtml = (unsafe) => (unsafe || '').toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
                 tagsEl.innerHTML = tags.map((tag, i) => {
                     const animateAttr = tag.animate ? ' data-animate-number' : '';
-                    return `<span class="meta-tag text-loaded"${animateAttr} style="animation-delay: ${400 + (i * 50)}ms">${tag.label}</span>`;
+                    return `<span class="meta-tag text-loaded"${animateAttr} style="animation-delay: ${400 + (i * 50)}ms">${escapeHtml(tag.label)}</span>`;
                 }).join('');
                 tagsEl.style.opacity = '1';
             }
@@ -244,10 +232,7 @@ function closeImageViewer() {
     const overlay = get('image-viewer-overlay');
     if (!overlay || overlay.classList.contains('hidden') || overlay.classList.contains('closing')) return;
 
-    // Hide crop overlay if open
-    const cropOverlay = get('image-crop-overlay');
-    if (cropOverlay) cropOverlay.classList.add('hidden');
-    cropMode = false;
+
 
     overlay.classList.add('closing');
 
@@ -267,224 +252,12 @@ function closeImageViewer() {
         });
         const imgEl = get('image-viewer-img');
         if (imgEl) imgEl.src = '';
-        
-        // Reset rotation
-        currentRotation = 0;
-        currentEditImage = null;
+
+
     }, 200); // Slightly less than 250ms to ensure it feels snappy
 }
 
-// Image editing functions
-function rotateImage(direction) {
-    const imgEl = get('image-viewer-img');
-    if (!imgEl) return;
-    
-    if (direction === 'left') {
-        currentRotation = (currentRotation - 90 + 360) % 360;
-    } else {
-        currentRotation = (currentRotation + 90) % 360;
-    }
-    
-    // Update rotation class
-    imgEl.classList.remove('rotated-90', 'rotated-180', 'rotated-270');
-    if (currentRotation === 90) imgEl.classList.add('rotated-90');
-    else if (currentRotation === 180) imgEl.classList.add('rotated-180');
-    else if (currentRotation === 270) imgEl.classList.add('rotated-270');
-    
-    // Reinitialize crop overlay for new dimensions
-    setTimeout(() => initCropOverlay(), 50);
-}
 
-function initCropOverlay() {
-    const imgEl = get('image-viewer-img');
-    const cropOverlay = get('image-crop-overlay');
-    const canvasWrap = get('image-viewer-canvas-wrap');
-    
-    if (!imgEl || !cropOverlay || !canvasWrap) return;
-    
-    // Get the displayed dimensions
-    const rect = imgEl.getBoundingClientRect();
-    const wrapRect = canvasWrap.getBoundingClientRect();
-    
-    // Initialize crop data to full image
-    cropData = {
-        x: 0,
-        y: 0,
-        width: rect.width,
-        height: rect.height
-    };
-    
-    // Position the crop overlay
-    const cropArea = cropOverlay.querySelector('.crop-area');
-    if (cropArea) {
-        cropArea.style.left = '0px';
-        cropArea.style.top = '0px';
-        cropArea.style.width = `${rect.width}px`;
-        cropArea.style.height = `${rect.height}px`;
-    }
-}
-
-function toggleCropMode() {
-    const cropOverlay = get('image-crop-overlay');
-    if (!cropOverlay) return;
-    
-    cropMode = !cropMode;
-    
-    if (cropMode) {
-        cropOverlay.classList.remove('hidden');
-        initCropOverlay();
-        setupCropHandlers();
-    } else {
-        cropOverlay.classList.add('hidden');
-    }
-}
-
-function setupCropHandlers() {
-    const cropArea = document.querySelector('.crop-area');
-    const cropOverlay = get('image-crop-overlay');
-    if (!cropArea || !cropOverlay) return;
-    
-    let isDragging = false;
-    let dragType = null;
-    let startPos = { x: 0, y: 0 };
-    let startCrop = { ...cropData };
-    
-    const onMouseDown = (e) => {
-        e.preventDefault();
-        isDragging = true;
-        
-        const target = e.target;
-        startPos = { x: e.clientX, y: e.clientY };
-        startCrop = { ...cropData };
-        
-        if (target.classList.contains('crop-handle')) {
-            dragType = target.classList[1]; // nw, ne, sw, se, n, s, w, e
-        } else {
-            dragType = 'move';
-        }
-    };
-    
-    const onMouseMove = (e) => {
-        if (!isDragging) return;
-        
-        const dx = e.clientX - startPos.x;
-        const dy = e.clientY - startPos.y;
-        
-        const imgEl = get('image-viewer-img');
-        if (!imgEl) return;
-        const imgRect = imgEl.getBoundingClientRect();
-        
-        if (dragType === 'move') {
-            cropData.x = Math.max(0, Math.min(imgRect.width - cropData.width, startCrop.x + dx));
-            cropData.y = Math.max(0, Math.min(imgRect.height - cropData.height, startCrop.y + dy));
-        } else {
-            // Handle resize
-            switch (dragType) {
-                case 'se':
-                    cropData.width = Math.max(50, Math.min(imgRect.width - cropData.x, startCrop.width + dx));
-                    cropData.height = Math.max(50, Math.min(imgRect.height - cropData.y, startCrop.height + dy));
-                    break;
-                case 'sw':
-                    const newWidthSW = Math.max(50, startCrop.width - dx);
-                    cropData.x = Math.max(0, startCrop.x + startCrop.width - newWidthSW);
-                    cropData.width = newWidthSW;
-                    cropData.height = Math.max(50, Math.min(imgRect.height - cropData.y, startCrop.height + dy));
-                    break;
-                case 'ne':
-                    cropData.width = Math.max(50, Math.min(imgRect.width - cropData.x, startCrop.width + dx));
-                    const newHeightNE = Math.max(50, startCrop.height - dy);
-                    cropData.y = Math.max(0, startCrop.y + startCrop.height - newHeightNE);
-                    cropData.height = newHeightNE;
-                    break;
-                case 'nw':
-                    const newWidthNW = Math.max(50, startCrop.width - dx);
-                    const newHeightNW = Math.max(50, startCrop.height - dy);
-                    cropData.x = Math.max(0, startCrop.x + startCrop.width - newWidthNW);
-                    cropData.y = Math.max(0, startCrop.y + startCrop.height - newHeightNW);
-                    cropData.width = newWidthNW;
-                    cropData.height = newHeightNW;
-                    break;
-                case 'n':
-                    const newHeightN = Math.max(50, startCrop.height - dy);
-                    cropData.y = Math.max(0, startCrop.y + startCrop.height - newHeightN);
-                    cropData.height = newHeightN;
-                    break;
-                case 's':
-                    cropData.height = Math.max(50, Math.min(imgRect.height - cropData.y, startCrop.height + dy));
-                    break;
-                case 'w':
-                    const newWidthW = Math.max(50, startCrop.width - dx);
-                    cropData.x = Math.max(0, startCrop.x + startCrop.width - newWidthW);
-                    cropData.width = newWidthW;
-                    break;
-                case 'e':
-                    cropData.width = Math.max(50, Math.min(imgRect.width - cropData.x, startCrop.width + dx));
-                    break;
-            }
-        }
-        
-        // Update visual
-        cropArea.style.left = `${cropData.x}px`;
-        cropArea.style.top = `${cropData.y}px`;
-        cropArea.style.width = `${cropData.width}px`;
-        cropArea.style.height = `${cropData.height}px`;
-    };
-    
-    const onMouseUp = () => {
-        isDragging = false;
-        dragType = null;
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-    };
-    
-    cropArea.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-}
-
-function confirmCrop() {
-    // For now, just exit crop mode - actual cropping would require canvas manipulation
-    // and saving the modified image, which is complex for a simple feature
-    const cropOverlay = get('image-crop-overlay');
-    if (cropOverlay) cropOverlay.classList.add('hidden');
-    cropMode = false;
-    
-    // Show feedback
-    showPopup('Crop area selected. The image will be cropped when converting to PDF.');
-}
-
-function cancelCrop() {
-    const cropOverlay = get('image-crop-overlay');
-    if (cropOverlay) cropOverlay.classList.add('hidden');
-    cropMode = false;
-    initCropOverlay(); // Reset crop data
-}
-
-function resetEdits() {
-    const imgEl = get('image-viewer-img');
-    if (!imgEl) return;
-    
-    currentRotation = 0;
-    imgEl.classList.remove('rotated-90', 'rotated-180', 'rotated-270');
-    
-    const cropOverlay = get('image-crop-overlay');
-    if (cropOverlay) cropOverlay.classList.add('hidden');
-    cropMode = false;
-    
-    initCropOverlay();
-}
-
-function applyEdits() {
-    // Apply rotation to the image data
-    if (!currentEditImage) return;
-    
-    // Store rotation in the image object for use during PDF conversion
-    currentEditImage.rotation = currentRotation;
-    currentEditImage.crop = cropMode ? { ...cropData } : null;
-    
-    showPopup('Changes applied!');
-    closeImageViewer();
-}
 
 function createDropIndicator(index) {
     const indicator = document.createElement('div');
@@ -582,7 +355,7 @@ function renderImagePreview(skipAnimation = false) {
 
                 // Add error handling for failed image loads
                 img.onerror = () => {
-                    console.error('[ImageToPDF] Failed to load image:', image.path);
+                    if (window.api?.logError) window.api.logError('[ImageToPDF] Failed to load image:', image.path); else console.error('[ImageToPDF] Failed to load image:', image.path);
                     img.style.display = 'none';
                     // Show fallback placeholder
                     fallback.style.display = 'flex';
@@ -639,24 +412,24 @@ function renderImagePreview(skipAnimation = false) {
             item.onmousedown = (event) => {
                 // Ignore if clicking on remove button
                 if (event.target.closest('.image-preview-remove')) return;
-                
+
                 const currIdx = Number.parseInt(item.dataset.index, 10);
                 if (Number.isNaN(currIdx)) return;
-                
+
                 // Only start drag on left mouse button
                 if (event.button !== 0) return;
-                
+
                 dragIndex = currIdx;
-                
+
                 // Create a ghost element for visual feedback, centered on cursor
                 const rect = item.getBoundingClientRect();
                 dragGhost = item.cloneNode(true);
                 dragGhost.className = 'image-preview-item drag-ghost';
-                
+
                 // Store offset from cursor to element center for smooth dragging
                 const offsetX = rect.left + rect.width / 2 - event.clientX;
                 const offsetY = rect.top + rect.height / 2 - event.clientY;
-                
+
                 dragGhost.style.cssText = `
                     position: fixed;
                     left: ${event.clientX + offsetX - rect.width / 2}px;
@@ -672,15 +445,15 @@ function renderImagePreview(skipAnimation = false) {
                     display: none;
                 `;
                 document.body.appendChild(dragGhost);
-                
+
                 // Store the offset for use in mousemove
                 dragGhost.dataset.offsetX = offsetX.toString();
                 dragGhost.dataset.offsetY = offsetY.toString();
-                
+
                 // Track mouse position to detect actual drag vs click
                 const mouseDownX = event.clientX;
                 const mouseDownY = event.clientY;
-                
+
                 const checkForDrag = (e) => {
                     const dx = Math.abs(e.clientX - mouseDownX);
                     const dy = Math.abs(e.clientY - mouseDownY);
@@ -694,16 +467,16 @@ function renderImagePreview(skipAnimation = false) {
                         document.removeEventListener('mousemove', checkForDrag);
                     }
                 };
-                
+
                 document.addEventListener('mousemove', checkForDrag);
-                
+
                 // Clean up checkForDrag on mouseup if no drag occurred
                 const cleanupDragCheck = () => {
                     document.removeEventListener('mousemove', checkForDrag);
                     document.removeEventListener('mouseup', cleanupDragCheck);
                 };
                 document.addEventListener('mouseup', cleanupDragCheck);
-                
+
                 // Prevent text selection during drag
                 event.preventDefault();
             };
@@ -752,7 +525,7 @@ function renderImagePreview(skipAnimation = false) {
 function renderSidebar(skipAnimation = false) {
     const sidebar = get('image-to-pdf-sidebar');
     const sidebarList = get('image-to-pdf-sidebar-list');
-    
+
     if (!sidebar || !sidebarList) return;
 
     // Show/hide sidebar based on image count
@@ -806,12 +579,12 @@ function renderSidebar(skipAnimation = false) {
             item.onmousedown = (event) => {
                 if (event.button !== 0) return;
                 event.preventDefault();
-                
+
                 const currIdx = Number.parseInt(item.dataset.index, 10);
                 if (Number.isNaN(currIdx)) return;
-                
+
                 sidebarDragIndex = currIdx;
-                
+
                 // Create ghost element
                 const rect = item.getBoundingClientRect();
                 sidebarDragGhost = item.cloneNode(true);
@@ -828,16 +601,16 @@ function renderSidebar(skipAnimation = false) {
                     box-shadow: 0 10px 40px rgba(0,0,0,0.3);
                 `;
                 document.body.appendChild(sidebarDragGhost);
-                
+
                 isSidebarDragging = true;
                 item.classList.add('dragging');
                 sidebarList.classList.add('is-dragging');
-                
+
                 // Auto-scroll state
                 let sidebarScrollVelocity = 0;
                 let sidebarScrollFrame = null;
                 const SIDEBAR_EDGE = 30;
-                
+
                 const startSidebarScroll = () => {
                     if (sidebarScrollFrame) return;
                     const step = () => {
@@ -850,7 +623,7 @@ function renderSidebar(skipAnimation = false) {
                     };
                     sidebarScrollFrame = requestAnimationFrame(step);
                 };
-                
+
                 const stopSidebarScroll = () => {
                     sidebarScrollVelocity = 0;
                     if (sidebarScrollFrame) {
@@ -858,15 +631,15 @@ function renderSidebar(skipAnimation = false) {
                         sidebarScrollFrame = null;
                     }
                 };
-                
+
                 const onMouseMove = (e) => {
                     if (!isSidebarDragging) return;
-                    
+
                     // Move ghost
                     if (sidebarDragGhost) {
                         sidebarDragGhost.style.top = `${e.clientY - 40}px`;
                     }
-                    
+
                     // Handle auto-scroll
                     const listRect = sidebarList.getBoundingClientRect();
                     if (e.clientY < listRect.top + SIDEBAR_EDGE) {
@@ -878,19 +651,19 @@ function renderSidebar(skipAnimation = false) {
                     } else {
                         stopSidebarScroll();
                     }
-                    
+
                     // Find drop target - use drop indicators
                     const indicators = sidebarList.querySelectorAll('.sidebar-drop-indicator');
                     let newDropIndex = -1;
-                    
+
                     // Clear all highlights first
                     indicators.forEach(ind => ind.classList.remove('drag-over'));
-                    
+
                     // Find the indicator to highlight based on mouse position
                     indicators.forEach((indicator) => {
                         const rect = indicator.getBoundingClientRect();
-                        const midY = rect.top + rect.height / 2;
-                        
+
+
                         // Check if mouse is near this indicator
                         if (e.clientY >= rect.top - 20 && e.clientY <= rect.bottom + 20) {
                             const idx = Number.parseInt(indicator.dataset.index, 10);
@@ -900,19 +673,19 @@ function renderSidebar(skipAnimation = false) {
                             }
                         }
                     });
-                    
+
                     sidebarDropIndex = newDropIndex;
                 };
-                
+
                 const onMouseUp = () => {
                     // Stop auto-scroll
                     stopSidebarScroll();
-                    
+
                     if (sidebarDragGhost) {
                         sidebarDragGhost.remove();
                         sidebarDragGhost = null;
                     }
-                    
+
                     // Clear indicator highlights
                     sidebarList.querySelectorAll('.sidebar-drop-indicator.drag-over').forEach(el => {
                         el.classList.remove('drag-over');
@@ -921,18 +694,18 @@ function renderSidebar(skipAnimation = false) {
                         el.classList.remove('dragging');
                     });
                     sidebarList.classList.remove('is-dragging');
-                    
+
                     // Perform reorder
                     if (sidebarDragIndex !== null && sidebarDropIndex >= 0) {
                         const updated = selectedImages.slice();
                         const [moved] = updated.splice(sidebarDragIndex, 1);
-                        
+
                         // Calculate final index
                         let finalIndex = sidebarDropIndex;
                         if (sidebarDropIndex > sidebarDragIndex) {
                             finalIndex = sidebarDropIndex - 1;
                         }
-                        
+
                         // Only update if position actually changes
                         if (finalIndex !== sidebarDragIndex) {
                             updated.splice(finalIndex, 0, moved);
@@ -940,15 +713,15 @@ function renderSidebar(skipAnimation = false) {
                             renderImagePreview(true);
                         }
                     }
-                    
+
                     sidebarDragIndex = null;
                     sidebarDropIndex = -1;
                     isSidebarDragging = false;
-                    
+
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
                 };
-                
+
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
             };
@@ -1021,15 +794,7 @@ function handleAutoScroll(event, preview, wrap) {
     }
 }
 
-function moveImage(index, delta) {
-    const nextIndex = index + delta;
-    if (nextIndex < 0 || nextIndex >= selectedImages.length) return;
-    const updated = selectedImages.slice();
-    const [moved] = updated.splice(index, 1);
-    updated.splice(nextIndex, 0, moved);
-    selectedImages = updated;
-    renderImagePreview();
-}
+
 
 function removeImage(index) {
     const preview = get('image-to-pdf-preview');
@@ -1283,7 +1048,7 @@ export function setupImageToPdfHandlers() {
     if (sortContainer && sortBtn) {
         sortBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const isOpen = sortContainer.classList.contains('open');
+
             document.querySelectorAll('.dropdown-container.open').forEach(d => {
                 if (d !== sortContainer) d.classList.remove('open');
             });
@@ -1314,7 +1079,7 @@ export function setupImageToPdfHandlers() {
         function getIndicatorFromPosition(clientX, clientY) {
             // Find the element at the position
             const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
-            
+
             for (const el of elementsAtPoint) {
                 if (el.classList.contains('image-drop-indicator')) {
                     return el;
@@ -1335,31 +1100,31 @@ export function setupImageToPdfHandlers() {
         // Mouse-based drag handlers (WebView2 compatible)
         document.addEventListener('mousemove', (event) => {
             if (!isDragging || !dragGhost) return;
-            
+
             // Move the ghost element with the cursor
             const offsetX = parseFloat(dragGhost.dataset.offsetX) || 0;
             const offsetY = parseFloat(dragGhost.dataset.offsetY) || 0;
             const width = dragGhost.offsetWidth;
             const height = dragGhost.offsetHeight;
-            
+
             dragGhost.style.left = `${event.clientX + offsetX - width / 2}px`;
             dragGhost.style.top = `${event.clientY + offsetY - height / 2}px`;
-            
+
             // Find drop indicator
             const indicator = getIndicatorFromPosition(event.clientX, event.clientY);
-            
+
             // Clear other highlights
             preview.querySelectorAll('.image-drop-indicator.drag-over').forEach(el => {
                 if (el !== indicator) el.classList.remove('drag-over');
             });
-            
+
             if (indicator) {
                 indicator.classList.add('drag-over');
                 currentDropIndex = Number.parseInt(indicator.dataset.index, 10);
             } else {
                 currentDropIndex = -1;
             }
-            
+
             // Handle auto-scroll
             if (previewWrap) handleAutoScroll(event, preview, previewWrap);
         });
@@ -1370,9 +1135,9 @@ export function setupImageToPdfHandlers() {
                 dragGhost.remove();
                 dragGhost = null;
             }
-            
+
             if (!isDragging) return;
-            
+
             // Remove visual states
             preview.querySelectorAll('.image-preview-item.dragging').forEach(el => {
                 el.classList.remove('dragging');
@@ -1381,28 +1146,28 @@ export function setupImageToPdfHandlers() {
             preview.querySelectorAll('.image-drop-indicator.drag-over').forEach(el => {
                 el.classList.remove('drag-over');
             });
-            
+
             stopAutoScroll();
-            
+
             // Perform the reorder if we have valid indices
             const fromIndex = dragIndex;
             const toIndex = currentDropIndex;
-            
+
             if (!Number.isNaN(fromIndex) && !Number.isNaN(toIndex) && toIndex >= 0) {
                 // If dropping on the target immediately before or after the item, no change needed
                 if (toIndex !== fromIndex && toIndex !== fromIndex + 1) {
                     const updated = selectedImages.slice();
                     const [moved] = updated.splice(fromIndex, 1);
-                    
+
                     // Adjust toIndex if it was after the item we just removed
                     const finalToIndex = (toIndex > fromIndex) ? toIndex - 1 : toIndex;
-                    
+
                     updated.splice(finalToIndex, 0, moved);
                     selectedImages = updated;
                     renderImagePreview(true);
                 }
             }
-            
+
             // Reset state
             dragIndex = null;
             isDragging = false;
@@ -1422,42 +1187,7 @@ export function setupImageToPdfHandlers() {
         });
     }
 
-    // Image editing handlers
-    const rotateLeftBtn = get('image-viewer-rotate-left');
-    const rotateRightBtn = get('image-viewer-rotate-right');
-    const cropBtn = get('image-viewer-crop');
-    const resetBtn = get('image-viewer-reset');
-    const applyBtn = get('image-viewer-apply');
-    const cropCancelBtn = get('crop-cancel');
-    const cropConfirmBtn = get('crop-confirm');
 
-    if (rotateLeftBtn) {
-        rotateLeftBtn.addEventListener('click', () => rotateImage('left'));
-    }
-
-    if (rotateRightBtn) {
-        rotateRightBtn.addEventListener('click', () => rotateImage('right'));
-    }
-
-    if (cropBtn) {
-        cropBtn.addEventListener('click', () => toggleCropMode());
-    }
-
-    if (resetBtn) {
-        resetBtn.addEventListener('click', () => resetEdits());
-    }
-
-    if (applyBtn) {
-        applyBtn.addEventListener('click', () => applyEdits());
-    }
-
-    if (cropCancelBtn) {
-        cropCancelBtn.addEventListener('click', () => cancelCrop());
-    }
-
-    if (cropConfirmBtn) {
-        cropConfirmBtn.addEventListener('click', () => confirmCrop());
-    }
 
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') closeImageViewer();

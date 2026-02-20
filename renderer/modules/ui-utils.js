@@ -2,7 +2,7 @@
 
 export const get = (id) => {
     const el = document.getElementById(id);
-    if (!el) console.warn(`Element with ID "${id}" not found`);
+    if (!el) if (window.api?.logWarn) window.api.logWarn(`Element with ID "${id}" not found`); else console.warn(`Element with ID "${id}" not found`);
     return el;
 };
 

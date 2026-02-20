@@ -2893,7 +2893,7 @@ input[type="text"]:focus {
 }
 
 .track-item.removing {
-    animation: item-pop-out 0.25s ease forwards !important;
+    animation: item-pop-out 0.1s ease forwards !important;
     pointer-events: none;
 }
 
@@ -2905,12 +2905,12 @@ input[type="text"]:focus {
     margin-bottom: -8px !important;
     /* Compensate for gap */
     overflow: hidden;
-    transition: max-height 0.2s ease, padding 0.2s ease, margin 0.2s ease;
+    transition: max-height 0.1s ease, padding 0.1s ease, margin 0.1s ease;
 }
 
 /* Queue-specific exit animation (matches track-item behavior) */
 .queue-item.removing {
-    animation: item-pop-out 0.25s ease forwards !important;
+    animation: item-pop-out 0.1s ease forwards !important;
     pointer-events: none;
 }
 
@@ -2921,7 +2921,7 @@ input[type="text"]:focus {
     padding-bottom: 0 !important;
     margin-bottom: -8px !important;
     overflow: hidden;
-    transition: max-height 0.2s ease, padding 0.2s ease, margin 0.2s ease;
+    transition: max-height 0.1s ease, padding 0.1s ease, margin 0.1s ease;
 }
 
 @keyframes item-pop-out {

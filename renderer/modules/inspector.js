@@ -205,31 +205,31 @@ export async function loadInspectorFile(filePath) {
     renderLoaders({ selector: '#inspector-view [data-loader]' });
 
     try {
-        console.log('[Inspector] Loading metadata for:', filePath);
+        if (window.api?.logInfo) window.api.logInfo('[Inspector] Loading metadata for:', filePath); else console.log('[Inspector] Loading metadata for:', filePath);
         
         let data;
         try {
             data = await window.api.getMetadataFull(filePath);
-            console.log('[Inspector] API call succeeded, data type:', typeof data);
-            console.log('[Inspector] Raw metadata response:', data);
+            if (window.api?.logInfo) window.api.logInfo('[Inspector] API call succeeded, data type:', typeof data); else console.log('[Inspector] API call succeeded, data type:', typeof data);
+            if (window.api?.logInfo) window.api.logInfo('[Inspector] Raw metadata response:', data); else console.log('[Inspector] Raw metadata response:', data);
         } catch (apiError) {
-            console.error('[Inspector] API call failed:', apiError);
+            if (window.api?.logError) window.api.logError('[Inspector] API call failed:', apiError); else console.error('[Inspector] API call failed:', apiError);
             if (inspectorContent) inspectorContent.textContent = 'Error loading metadata: ' + apiError.message;
             showPopup('Error loading metadata: ' + apiError.message);
             return;
         }
         
         if (!data) {
-            console.error('[Inspector] No data returned');
+            if (window.api?.logError) window.api.logError('[Inspector] No data returned'); else console.error('[Inspector] No data returned');
             if (inspectorContent) inspectorContent.textContent = 'Error: No data returned';
             showPopup('No metadata returned');
             return;
         }
         
-        console.log('[Inspector] Has format:', !!data.format);
-        console.log('[Inspector] Has streams:', !!data.streams);
+        if (window.api?.logInfo) window.api.logInfo('[Inspector] Has format:', !!data.format); else console.log('[Inspector] Has format:', !!data.format);
+        if (window.api?.logInfo) window.api.logInfo('[Inspector] Has streams:', !!data.streams); else console.log('[Inspector] Has streams:', !!data.streams);
         if (data.streams) {
-            console.log('[Inspector] Number of streams:', data.streams.length);
+            if (window.api?.logInfo) window.api.logInfo('[Inspector] Number of streams:', data.streams.length); else console.log('[Inspector] Number of streams:', data.streams.length);
         }
 
         // Note: data.error check removed - Tauri errors are thrown, not returned as objects
@@ -237,7 +237,7 @@ export async function loadInspectorFile(filePath) {
 
         currentInspectorData = data;
         populateMetadataFields(data);
-        console.log('[Inspector] Metadata populated successfully');
+        if (window.api?.logInfo) window.api.logInfo('[Inspector] Metadata populated successfully'); else console.log('[Inspector] Metadata populated successfully');
         if (rawToggle && rawToggle.open && inspectorContent) {
             inspectorContent.textContent = JSON.stringify(data, null, 2);
         }
@@ -245,7 +245,7 @@ export async function loadInspectorFile(filePath) {
     } catch (e) {
         // This catch block is now redundant since we handle errors in the inner try-catch
         // Keeping it as a fallback for unexpected errors
-        console.error('[Inspector] Unexpected error:', e);
+        if (window.api?.logError) window.api.logError('[Inspector] Unexpected error:', e); else console.error('[Inspector] Unexpected error:', e);
         if (inspectorContent) inspectorContent.textContent = 'Error loading metadata: ' + (e.message || String(e));
     }
 }
@@ -360,7 +360,7 @@ export function setupInspectorHandlers() {
                     inspectorSaveBtn.disabled = false;
                 }
             } catch (e) {
-                console.error('Error saving metadata:', e);
+                if (window.api?.logError) window.api.logError('Error saving metadata:', e); else console.error('Error saving metadata:', e);
                 showPopup('Error saving metadata: ' + e.message);
                 inspectorSaveBtn.innerHTML = `
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

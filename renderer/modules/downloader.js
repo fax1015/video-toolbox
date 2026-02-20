@@ -1,6 +1,6 @@
 // Video Downloader Module
 
-import { get, showPopup, showConfirm, showView, showPlaylistConfirm, formatDurationFromSeconds, formatBytes, sanitizeFilename, resetNav, toggleSidebar, renderLoaders, animateAutoHeight } from './ui-utils.js';
+import { get, showPopup, showView, showPlaylistConfirm, formatDurationFromSeconds, formatBytes, sanitizeFilename, resetNav, toggleSidebar, renderLoaders, animateAutoHeight } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue, updateQueueUI, updateQueueStatusUI, processQueue } from './queue.js';
 
@@ -63,7 +63,7 @@ export function syncFormatCardFromDropdowns() {
 
     if (!currentVideoInfo || !currentVideoInfo.formats) return;
 
-    const mode = dlModeSelect ? dlModeSelect.value : 'video';
+
     const quality = dlQualitySelect ? dlQualitySelect.value : 'best';
     const format = dlFormatSelect ? dlFormatSelect.value : 'mp4';
     const codec = dlVideoCodecSelect ? dlVideoCodecSelect.value : 'copy';
@@ -389,7 +389,7 @@ export async function processVideoUrl(url) {
     const dlAdvancedPanel = get('dl-advanced-panel');
     const dlAudioBitrateSelect = get('dl-audio-bitrate');
     const dlFormatTabs = get('dl-format-tabs');
-    const popupOverlay = get('popup-overlay');
+
     const queueView = get('queue-view');
     const navQueue = get('nav-queue');
 
@@ -466,7 +466,7 @@ export async function processVideoUrl(url) {
                             let slug = pathParts[pathParts.length - 1].replace(/-/g, ' ');
                             meta.title = slug.charAt(0).toUpperCase() + slug.slice(1);
                         }
-                    } catch (e) { /* ignore */ }
+                    } catch (e) { if (window.api?.logWarn) window.api.logWarn('Ignored error: ' + e); }
                 }
             }
 
@@ -534,7 +534,7 @@ export async function processVideoUrl(url) {
                                                 .replace(/-/g, ' ');
                                             name = name.charAt(0).toUpperCase() + name.slice(1);
                                         }
-                                    } catch (e) { /* ignore */ }
+                                    } catch (e) { if (window.api?.logWarn) window.api.logWarn('Ignored error: ' + e); }
                                 }
 
                                 let finalName = name || `Video ${entry.id}`;
@@ -594,7 +594,7 @@ export async function processVideoUrl(url) {
                             let slug = pathParts[pathParts.length - 1].replace(/-/g, ' ');
                             info.title = slug.charAt(0).toUpperCase() + slug.slice(1);
                         }
-                    } catch (e) { /* ignore */ }
+                    } catch (e) { if (window.api?.logWarn) window.api.logWarn('Ignored error: ' + e); }
                 }
             }
 
@@ -682,7 +682,7 @@ export async function processVideoUrl(url) {
             showView(downloaderDashboard);
         }
     } catch (err) {
-        console.error('Failed to get video info:', err);
+        if (window.api?.logError) window.api.logError('Failed to get video info:', err); else console.error('Failed to get video info:', err);
         const downloaderDashboard = get('downloader-dashboard');
         showPopup(`Error: ${err.message || 'Error loading video info'}`);
         showView(downloaderDashboard);
@@ -802,7 +802,7 @@ export function setupDownloaderHandlers() {
                     }
                 }
             } catch (err) {
-                console.error('Failed to read clipboard', err);
+                if (window.api?.logError) window.api.logError('Failed to read clipboard', err); else console.error('Failed to read clipboard', err);
             }
         });
     }

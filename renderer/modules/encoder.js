@@ -12,7 +12,7 @@ function loadCustomPresets() {
     try {
         return JSON.parse(localStorage.getItem(CUSTOM_PRESETS_KEY) || '{}');
     } catch (err) {
-        console.warn('Failed to load custom presets:', err);
+        if (window.api?.logWarn) window.api.logWarn('Failed to load custom presets:', err); else console.warn('Failed to load custom presets:', err);
         return {};
     }
 }
@@ -97,7 +97,7 @@ function getAutoEncoder() {
 
 export function getOptionsFromUI() {
     const formatSelect = get('format-select');
-    const codecSelect = get('codec-select');
+
     const presetSelect = get('preset-select');
     const resolutionSelect = get('resolution-select');
     const fpsSelect = get('fps-select');
@@ -261,7 +261,7 @@ export async function handleFileSelection(filePath) {
         // Update preset status and file size estimate
         updatePresetStatus();
     } catch (err) {
-        console.error('Could not read metadata:', err);
+        if (window.api?.logError) window.api.logError('Could not read metadata:', err); else console.error('Could not read metadata:', err);
         // Update file size display to show error state when metadata fails
         const estFileSizeEl = get('est-file-size');
         if (estFileSizeEl) estFileSizeEl.textContent = '--';
@@ -509,7 +509,7 @@ export function applyPreset(settings, name) {
 }
 
 export async function handleFolderSelection(folderPath) {
-    console.log('Folder selected:', folderPath);
+    if (window.api?.logInfo) window.api.logInfo('Folder selected:', folderPath); else console.log('Folder selected:', folderPath);
     try {
         const files = await window.api.listFiles(folderPath);
         if (files.length === 0) {
@@ -520,8 +520,7 @@ export async function handleFolderSelection(folderPath) {
         const confirmAdd = await showConfirm(`Found ${files.length} video files. Add them to queue with current settings?`);
         if (!confirmAdd) return;
 
-        const formatSelect = get('format-select');
-        const codecSelect = get('codec-select');
+
         const presetSelect = get('preset-select');
         const resolutionSelect = get('resolution-select');
         const fpsSelect = get('fps-select');
@@ -572,7 +571,7 @@ export async function handleFolderSelection(folderPath) {
         resetNav();
         if (navQueue) navQueue.classList.add('active');
     } catch (err) {
-        console.error('Error handling folder:', err);
+        if (window.api?.logError) window.api.logError('Error handling folder:', err); else console.error('Error handling folder:', err);
     }
 }
 
@@ -602,21 +601,21 @@ export function setupEncoderHandlers() {
             dropZone.classList.remove('drag-over');
             const file = e.dataTransfer.files[0];
             if (file) {
-                console.log('File dropped:', file.path);
+                if (window.api?.logInfo) window.api.logInfo('File dropped:', file.path); else console.log('File dropped:', file.path);
                 handleFileSelection(file.path);
             }
         });
 
         dropZone.addEventListener('click', async () => {
-            console.log('Drop zone clicked, opening dialog...');
+            if (window.api?.logInfo) window.api.logInfo('Drop zone clicked, opening dialog...'); else console.log('Drop zone clicked, opening dialog...');
             try {
                 const filePath = await window.api.selectFile();
                 if (filePath) {
-                    console.log('File selected:', filePath);
+                    if (window.api?.logInfo) window.api.logInfo('File selected:', filePath); else console.log('File selected:', filePath);
                     handleFileSelection(filePath);
                 }
             } catch (err) {
-                console.error('Error selecting file:', err);
+                if (window.api?.logError) window.api.logError('Error selecting file:', err); else console.error('Error selecting file:', err);
             }
         });
     }
@@ -647,7 +646,7 @@ export function setupEncoderHandlers() {
                     handleFolderSelection(folderPath);
                 }
             } catch (err) {
-                console.error('Error selecting folder:', err);
+                if (window.api?.logError) window.api.logError('Error selecting folder:', err); else console.error('Error selecting folder:', err);
             }
         });
     }

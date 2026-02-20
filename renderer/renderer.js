@@ -24,7 +24,7 @@ async function loadDownloader() {
             return mod;
         }).catch((err) => {
             downloaderModulePromise = null;
-            console.error('Failed to load downloader module', err);
+            if (window.api?.logError) window.api.logError('Failed to load downloader module', err); else console.error('Failed to load downloader module', err);
             showPopup('Failed to load downloader.');
             throw err;
         });
@@ -45,7 +45,7 @@ async function loadTrimmer() {
             return mod;
         }).catch((err) => {
             trimmerModulePromise = null;
-            console.error('Failed to load trimmer module', err);
+            if (window.api?.logError) window.api.logError('Failed to load trimmer module', err); else console.error('Failed to load trimmer module', err);
             showPopup('Failed to load trimmer.');
             throw err;
         });
@@ -168,7 +168,7 @@ async function loadExtractAudio() {
             return mod;
         }).catch((err) => {
             extractAudioModulePromise = null;
-            console.error('Failed to load extract audio module', err);
+            if (window.api?.logError) window.api.logError('Failed to load extract audio module', err); else console.error('Failed to load extract audio module', err);
             showPopup('Failed to load extract audio.');
             throw err;
         });
@@ -189,7 +189,7 @@ async function loadInspector() {
             return mod;
         }).catch((err) => {
             inspectorModulePromise = null;
-            console.error('Failed to load inspector module', err);
+            if (window.api?.logError) window.api.logError('Failed to load inspector module', err); else console.error('Failed to load inspector module', err);
             showPopup('Failed to load inspector.');
             throw err;
         });
@@ -198,7 +198,7 @@ async function loadInspector() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Renderer initialized');
+    if (window.api?.logInfo) window.api.logInfo('Renderer initialized'); else console.log('Renderer initialized');
 
     renderLoaders();
     setupAnimatedNumbers();
@@ -247,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         updateBadge.classList.remove('update-available');
                         updateBadge.classList.add('hidden');
                     }
-                    console.warn('Update check failed', err);
+                    if (window.api?.logWarn) window.api.logWarn('Update check failed', err); else console.warn('Update check failed', err);
                 });
             }
         }).catch(() => {
@@ -409,7 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check for Tauri API bridge
     if (!window.api) {
-        console.error('Tauri API bridge not found! Check preload script configuration.');
+        if (window.api?.logError) window.api.logError('Tauri API bridge not found! Check preload script configuration.'); else console.error('Tauri API bridge not found! Check preload script configuration.');
         return;
     }
 
@@ -422,7 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 state.setAppSettings({ ...state.appSettings, ...JSON.parse(saved) });
             } catch (e) {
-                console.error('Error parsing settings', e);
+                if (window.api?.logError) window.api.logError('Error parsing settings', e); else console.error('Error parsing settings', e);
             }
         }
         applySettings();
@@ -695,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const encoders = await electron.getEncoders();
             state.setDetectedEncoders(encoders);
-            console.log('Detected encoders:', encoders);
+            if (window.api?.logInfo) window.api.logInfo('Detected encoders:', encoders); else console.log('Detected encoders:', encoders);
 
             if (state.appSettings.hwAccel === 'auto' && hwAccelSelect) {
                 hwAccelSelect.value = 'auto';
@@ -703,7 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             updateHardwareAutoTag();
         } catch (e) {
-            console.error('Error detecting hardware:', e);
+            if (window.api?.logError) window.api.logError('Error detecting hardware:', e); else console.error('Error detecting hardware:', e);
         }
     }
 
@@ -1189,9 +1189,9 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             updateEstFileSize();
         } catch (err) {
-            console.warn('Could not read metadata:', err);
+            if (window.api?.logWarn) window.api.logWarn('Could not read metadata:', err); else console.warn('Could not read metadata:', err);
         }
     }
 
-    console.log('Video Toolbox initialized successfully with modular structure');
+    if (window.api?.logInfo) window.api.logInfo('Video Toolbox initialized successfully with modular structure'); else console.log('Video Toolbox initialized successfully with modular structure');
 });
