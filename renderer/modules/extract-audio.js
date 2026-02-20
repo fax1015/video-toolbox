@@ -84,7 +84,7 @@ export async function handleExtractFileSelection(filePath, options = {}) {
     updateExtractBitrateVisibility();
 
     try {
-        const metadata = await window.electron.getMetadata(filePath);
+        const metadata = await window.api.getMetadata(filePath);
         if (extractFileDuration) extractFileDuration.textContent = metadata.duration;
     } catch (e) {
         if (extractFileDuration) extractFileDuration.textContent = 'Unknown';
@@ -169,7 +169,7 @@ export function setupExtractAudioHandlers() {
             }
         });
         extractAudioDropZone.addEventListener('click', async () => {
-            const path = await window.electron.selectFile();
+            const path = await window.api.selectFile();
             if (path) {
                 handleExtractFileSelection(path).then(() => {
                     showView(get('extract-audio-dashboard'));
@@ -237,7 +237,7 @@ export function setupExtractAudioHandlers() {
             toggleSidebar(true);
 
             const options = getExtractOptionsFromUI();
-            window.electron.extractAudio({
+            window.api.extractAudio({
                 ...options,
                 workPriority: state.appSettings.workPriority || 'normal'
             });

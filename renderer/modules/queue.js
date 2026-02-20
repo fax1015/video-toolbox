@@ -211,19 +211,19 @@ export function processQueue() {
     if (nextItem.taskType === 'trim') {
         if (progressTitle) progressTitle.textContent = 'Trimming video...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.electron.trimVideo(nextItem.options);
+        window.api.trimVideo(nextItem.options);
     } else if (nextItem.taskType === 'extract') {
         if (progressTitle) progressTitle.textContent = 'Extracting audio...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.electron.extractAudio(nextItem.options);
+        window.api.extractAudio(nextItem.options);
     } else if (nextItem.taskType === 'download') {
         if (progressTitle) progressTitle.textContent = 'Downloading video...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.electron.downloadVideo(nextItem.options);
+        window.api.downloadVideo(nextItem.options);
     } else {
         if (progressTitle) progressTitle.textContent = 'Encoding in Progress';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.electron.startEncode(nextItem.options);
+        window.api.startEncode(nextItem.options);
     }
 }
 
@@ -262,7 +262,7 @@ export function setupQueueHandlers() {
             const confirmClear = await showConfirm('Are you sure you want to clear all items from the queue?');
             if (!confirmClear) return;
 
-            if (state.isQueueRunning) window.electron.cancelEncode();
+            if (state.isQueueRunning) window.api.cancelEncode();
             state.setEncodingQueue([]);
             state.setCurrentlyEncodingItemId(null);
             state.setQueueRunning(false);
@@ -285,7 +285,7 @@ export function setupQueueHandlers() {
                         item.status = 'pending';
                         item.progress = 0;
                     }
-                    window.electron.cancelEncode();
+                    window.api.cancelEncode();
                     state.setCurrentlyEncodingItemId(null);
                     toggleSidebar(false);
                 }
@@ -302,7 +302,7 @@ export function setupQueueHandlers() {
     if (queueAddBtn) {
         queueAddBtn.addEventListener('click', async () => {
             try {
-                const filePath = await window.electron.selectFile();
+                const filePath = await window.api.selectFile();
                 if (filePath) {
                     const options = window.getOptionsFromUI();
                     options.input = filePath;
@@ -321,7 +321,7 @@ export function setupQueueHandlers() {
 
         // If currently encoding, cancel and reset
         if (id === state.currentlyEncodingItemId) {
-            window.electron.cancelEncode();
+            window.api.cancelEncode();
             state.setCurrentlyEncodingItemId(null);
             const item = state.encodingQueue[index];
             if (item) {

@@ -241,7 +241,7 @@ export async function handleFileSelection(filePath) {
     showView(dashboard);
 
     try {
-        const metadata = await window.electron.getMetadata(filePath);
+        const metadata = await window.api.getMetadata(filePath);
         if (resolutionEl) resolutionEl.textContent = metadata.resolution;
         if (durationEl) durationEl.textContent = metadata.duration;
         if (bitrateEl) bitrateEl.textContent = metadata.bitrate;
@@ -261,7 +261,10 @@ export async function handleFileSelection(filePath) {
         // Update preset status and file size estimate
         updatePresetStatus();
     } catch (err) {
-        console.warn('Could not read metadata:', err);
+        console.error('Could not read metadata:', err);
+        // Update file size display to show error state when metadata fails
+        const estFileSizeEl = get('est-file-size');
+        if (estFileSizeEl) estFileSizeEl.textContent = '--';
     }
 }
 
@@ -508,7 +511,7 @@ export function applyPreset(settings, name) {
 export async function handleFolderSelection(folderPath) {
     console.log('Folder selected:', folderPath);
     try {
-        const files = await window.electron.listFiles(folderPath);
+        const files = await window.api.listFiles(folderPath);
         if (files.length === 0) {
             showPopup('No video files found in the selected folder.');
             return;
@@ -607,7 +610,7 @@ export function setupEncoderHandlers() {
         dropZone.addEventListener('click', async () => {
             console.log('Drop zone clicked, opening dialog...');
             try {
-                const filePath = await window.electron.selectFile();
+                const filePath = await window.api.selectFile();
                 if (filePath) {
                     console.log('File selected:', filePath);
                     handleFileSelection(filePath);
@@ -639,7 +642,7 @@ export function setupEncoderHandlers() {
 
         folderDropZone.addEventListener('click', async () => {
             try {
-                const folderPath = await window.electron.selectFolder();
+                const folderPath = await window.api.selectFolder();
                 if (folderPath) {
                     handleFolderSelection(folderPath);
                 }
@@ -687,7 +690,7 @@ export function setupEncoderHandlers() {
             state.setEncodingState(true);
             state.setCancelled(false);
 
-            window.electron.startEncode(options);
+            window.api.startEncode(options);
         });
     }
 
@@ -716,7 +719,7 @@ export function setupEncoderHandlers() {
 
     if (addAudioBtn) {
         addAudioBtn.addEventListener('click', async () => {
-            const path = await window.electron.selectFile();
+            const path = await window.api.selectFile();
             if (path) {
                 state.audioTracks.push({ path, name: path.split(/[\\/]/).pop() });
                 renderAudioTracks(state.audioTracks);
@@ -786,7 +789,7 @@ export function setupEncoderHandlers() {
 
     if (subtitleDropZone) {
         subtitleDropZone.addEventListener('click', async () => {
-            const path = await window.electron.selectFile();
+            const path = await window.api.selectFile();
             if (path) {
                 state.subtitleTracks.push({ path, name: path.split(/[\\/]/).pop() });
                 renderSubtitleTracks(state.subtitleTracks);
@@ -815,7 +818,7 @@ export function setupEncoderHandlers() {
 
     if (chapterImportZone) {
         chapterImportZone.addEventListener('click', async () => {
-            const path = await window.electron.selectFile();
+            const path = await window.api.selectFile();
             if (path) {
                 handleChapterFile(path);
             }

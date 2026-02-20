@@ -447,7 +447,7 @@ export async function processVideoUrl(url) {
 
     try {
         const isSoundCloud = url.includes('soundcloud.com');
-        let info = await window.electron.getVideoInfo(url, { disableFlatPlaylist: isSoundCloud });
+        let info = await window.api.getVideoInfo(url, { disableFlatPlaylist: isSoundCloud });
 
         if (requestId !== currentInfoRequestId) return;
 
@@ -710,8 +710,8 @@ export function setupDownloaderHandlers() {
     const dlNewDownloadBtn = get('dl-new-download-btn');
 
     // Register IPC callbacks
-    if (window.electron) {
-        window.electron.onDownloadProgress((data) => {
+    if (window.api) {
+        window.api.onDownloadProgress((data) => {
             const dlProgressRing = get('dl-progress-ring');
             const dlProgressPercent = get('dl-progress-percent');
             const dlSpeed = get('dl-speed');
@@ -740,7 +740,7 @@ export function setupDownloaderHandlers() {
             }
         });
 
-        window.electron.onDownloadComplete((message) => {
+        window.api.onDownloadComplete((message) => {
             const dlCompleteView = get('dl-complete-view');
             const dlOutputPath = get('dl-output-path');
             const dlUrlInput = get('dl-url');
@@ -763,7 +763,7 @@ export function setupDownloaderHandlers() {
             }
         });
 
-        window.electron.onDownloadError((error) => {
+        window.api.onDownloadError((error) => {
             if (state.isQueueRunning && state.currentlyEncodingItemId !== null) {
                 const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
                 if (item) {
@@ -1010,7 +1010,7 @@ export function setupDownloaderHandlers() {
             if (dlEta) dlEta.textContent = '--:--';
             if (dlSize) dlSize.textContent = '--';
 
-            window.electron.downloadVideo(options);
+            window.api.downloadVideo(options);
         });
     }
 
@@ -1031,13 +1031,13 @@ export function setupDownloaderHandlers() {
 
     if (dlOpenFileBtn) {
         dlOpenFileBtn.addEventListener('click', () => {
-            if (currentDlOutputPath) window.electron.openFile(currentDlOutputPath);
+            if (currentDlOutputPath) window.api.openFile(currentDlOutputPath);
         });
     }
 
     if (dlOpenFolderBtn) {
         dlOpenFolderBtn.addEventListener('click', () => {
-            if (currentDlOutputPath) window.electron.openFolder(currentDlOutputPath);
+            if (currentDlOutputPath) window.api.openFolder(currentDlOutputPath);
         });
     }
 
@@ -1054,8 +1054,8 @@ export function setupDownloaderHandlers() {
     const dlCancelBtn = get('dl-cancel-btn');
     if (dlCancelBtn) {
         dlCancelBtn.addEventListener('click', () => {
-            if (window.electron && window.electron.cancelDownload) {
-                window.electron.cancelDownload();
+            if (window.api && window.api.cancelDownload) {
+                window.api.cancelDownload();
             }
             // Return to main URL input view and re-enable sidebar
             toggleSidebar(false);

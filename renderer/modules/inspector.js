@@ -205,24 +205,48 @@ export async function loadInspectorFile(filePath) {
     renderLoaders({ selector: '#inspector-view [data-loader]' });
 
     try {
-        const data = await window.electron.getMetadataFull(filePath);
-
-        if (data.error) {
-            if (inspectorContent) inspectorContent.textContent = 'Error: ' + data.error;
-            showPopup('Unsupported or corrupted file');
-            showView(get('inspector-drop-zone'));
+        console.log('[Inspector] Loading metadata for:', filePath);
+        
+        let data;
+        try {
+            data = await window.api.getMetadataFull(filePath);
+            console.log('[Inspector] API call succeeded, data type:', typeof data);
+            console.log('[Inspector] Raw metadata response:', data);
+        } catch (apiError) {
+            console.error('[Inspector] API call failed:', apiError);
+            if (inspectorContent) inspectorContent.textContent = 'Error loading metadata: ' + apiError.message;
+            showPopup('Error loading metadata: ' + apiError.message);
             return;
         }
+        
+        if (!data) {
+            console.error('[Inspector] No data returned');
+            if (inspectorContent) inspectorContent.textContent = 'Error: No data returned';
+            showPopup('No metadata returned');
+            return;
+        }
+        
+        console.log('[Inspector] Has format:', !!data.format);
+        console.log('[Inspector] Has streams:', !!data.streams);
+        if (data.streams) {
+            console.log('[Inspector] Number of streams:', data.streams.length);
+        }
+
+        // Note: data.error check removed - Tauri errors are thrown, not returned as objects
+        // The try-catch above handles errors properly
 
         currentInspectorData = data;
         populateMetadataFields(data);
+        console.log('[Inspector] Metadata populated successfully');
         if (rawToggle && rawToggle.open && inspectorContent) {
             inspectorContent.textContent = JSON.stringify(data, null, 2);
         }
 
     } catch (e) {
-        console.error('Error loading metadata:', e);
-        if (inspectorContent) inspectorContent.textContent = 'Error loading metadata: ' + e.message;
+        // This catch block is now redundant since we handle errors in the inner try-catch
+        // Keeping it as a fallback for unexpected errors
+        console.error('[Inspector] Unexpected error:', e);
+        if (inspectorContent) inspectorContent.textContent = 'Error loading metadata: ' + (e.message || String(e));
     }
 }
 
@@ -236,7 +260,7 @@ export function setupInspectorHandlers() {
     
     if (inspectorDropZone) {
         inspectorDropZone.addEventListener('click', async () => {
-            const filePath = await window.electron.selectFile({ allowAll: true });
+            const filePath = await window.api.selectFile({ allowAll: true });
             if (filePath) loadInspectorFile(filePath);
         });
 
@@ -299,7 +323,7 @@ export function setupInspectorHandlers() {
             renderLoaders({ selector: '#inspector-save-btn [data-loader]' });
 
             try {
-                const result = await window.electron.saveMetadata({
+                const result = await window.api.saveMetadata({
                     filePath: currentInspectorFilePath,
                     metadata
                 });

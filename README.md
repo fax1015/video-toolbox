@@ -1,3 +1,3 @@
 # Video Toolbox
 
-it works (it uses electron tho)
+it works (it uses tauri)

@@ -3,6 +3,8 @@
 
 import { DEFAULT_SETTINGS, ACCENT_COLORS, BUILT_IN_PRESETS, TOOL_REGISTRY, APP_SETTINGS_KEY } from './constants.js';
 import { get, showPopup, showConfirm, setupCustomSelects, showView, toggleSidebar, resetNav, resetProgress, renderAudioTracks, renderSubtitleTracks, updateTextContent, renderLoaders, setupAnimatedNumbers } from './modules/ui-utils.js';
+
+const electron = window.api;
 import { addToQueue, updateQueueUI, updateQueueProgress, renderQueue, processQueue, updateQueueStatusUI, setupQueueHandlers } from './modules/queue.js';
 import { setupEncoderHandlers, handleFileSelection, handleFolderSelection, getOptionsFromUI, applyOptionsToUI, updateEstFileSize } from './modules/encoder.js';
 import { setupAppsHandlers } from './modules/apps.js';
@@ -202,16 +204,36 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAnimatedNumbers();
 
     const appVersionEl = get('app-version');
+    const headerAppVersionEl = get('header-app-version');
+
+    // Window Controls
+    const minBtn = document.getElementById('min-btn');
+    const maxBtn = document.getElementById('max-btn');
+    const closeBtn = document.getElementById('close-btn');
+
+    if (minBtn) minBtn.addEventListener('click', () => window.api.minimize());
+    if (maxBtn) maxBtn.addEventListener('click', () => window.api.toggleMaximize());
+    if (closeBtn) closeBtn.addEventListener('click', () => window.api.close());
+
     const updateBadge = get('update-badge');
-    if (updateBadge && window.electron?.openExternal) {
+    if (updateBadge && window.api?.openExternal) {
         updateBadge.addEventListener('click', () => {
-            window.electron.openExternal(UPDATE_PAGE_URL);
+            window.api.openExternal(UPDATE_PAGE_URL);
         });
     }
-    if (appVersionEl && window.electron?.getAppVersion) {
-        window.electron.getAppVersion().then((version) => {
+
+    // Report a Bug button - opens GitHub issues page
+    const reportBugBtn = get('report-bug-btn');
+    if (reportBugBtn && window.api?.openExternal) {
+        reportBugBtn.addEventListener('click', () => {
+            window.api.openExternal(`https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.name}/issues`);
+        });
+    }
+    if ((appVersionEl || headerAppVersionEl) && window.api?.getAppVersion) {
+        window.api.getAppVersion().then((version) => {
             if (version) {
-                appVersionEl.textContent = `v${version}`;
+                if (appVersionEl) appVersionEl.textContent = `v${version}`;
+                if (headerAppVersionEl) headerAppVersionEl.textContent = `v${version}`;
                 checkForUpdates(version, updateBadge).then((status) => {
                     if (!updateBadge) return;
                     if (status === 'current') {
@@ -351,6 +373,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const sidebarRect = sidebar.getBoundingClientRect();
         const activeRect = activeButton.getBoundingClientRect();
         const indicatorHeight = sidebarIndicator.offsetHeight || 24;
+
+        // Check if the active button is in the sidebar-bottom section (always visible)
+        const sidebarBottom = sidebar.querySelector('.sidebar-bottom');
+        const isInBottomSection = sidebarBottom && sidebarBottom.contains(activeButton);
+
+        let isVisible = true;
+
+        if (!isInBottomSection) {
+            // Only check scroll visibility if not in bottom section
+            const scrollContainer = sidebar.querySelector('.sidebar-nav-scroll');
+            if (scrollContainer) {
+                const scrollRect = scrollContainer.getBoundingClientRect();
+                // Check if active button is within the scroll container's visible bounds
+                isVisible = activeRect.top >= scrollRect.top - 5 &&
+                    activeRect.bottom <= scrollRect.bottom + 5;
+            }
+        }
+
+        if (!isVisible) {
+            sidebarIndicator.style.opacity = '0';
+            return;
+        }
+
+        // Calculate position relative to sidebar, accounting for scroll
         const nextTop = activeRect.top - sidebarRect.top + (activeRect.height - indicatorHeight) / 2;
 
         sidebarIndicator.style.transform = `translateY(${Math.max(nextTop, 0)}px)`;
@@ -361,13 +407,13 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(updateSidebarIndicator);
     };
 
-    // Check for electron bridge
-    if (!window.electron) {
-        console.error('Electron bridge not found! Check preload script configuration.');
+    // Check for Tauri API bridge
+    if (!window.api) {
+        console.error('Tauri API bridge not found! Check preload script configuration.');
         return;
     }
 
-    const { electron } = window;
+    const { api } = window;
 
     // ==================== SETTINGS MANAGEMENT ====================
     function loadSettings() {
@@ -813,11 +859,39 @@ document.addEventListener('DOMContentLoaded', () => {
         scheduleSidebarIndicatorUpdate();
     }
 
+    // Sidebar scroll indicator
+    const sidebarNavScroll = document.querySelector('.sidebar-nav-scroll');
+    const scrollIndicator = document.querySelector('.sidebar-scroll-indicator');
+
+    const updateScrollIndicator = () => {
+        if (!sidebarNavScroll || !scrollIndicator) return;
+
+        const { scrollTop, scrollHeight, clientHeight } = sidebarNavScroll;
+        const isScrollable = scrollHeight > clientHeight;
+        const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5;
+
+        if (isScrollable && !isAtBottom) {
+            scrollIndicator.classList.add('visible');
+        } else {
+            scrollIndicator.classList.remove('visible');
+        }
+    };
+
+    if (sidebarNavScroll) {
+        sidebarNavScroll.addEventListener('scroll', () => {
+            updateScrollIndicator();
+            scheduleSidebarIndicatorUpdate();
+        });
+        window.addEventListener('resize', updateScrollIndicator);
+        // Initial check
+        requestAnimationFrame(updateScrollIndicator);
+    }
+
     // Cancel encoding button
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
-            if (window.electron && window.electron.cancelEncode) {
-                window.electron.cancelEncode();
+            if (window.api && window.api.cancelEncode) {
+                window.api.cancelEncode();
             }
             // Return to main drop zone
             const dropZone = get('drop-zone');
@@ -918,7 +992,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (openFileBtn) {
         openFileBtn.addEventListener('click', () => {
             if (state.currentOutputPath) {
-                window.electron.openFile(state.currentOutputPath);
+                window.api.openFile(state.currentOutputPath);
             }
         });
     }
@@ -926,7 +1000,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (openFolderBtn) {
         openFolderBtn.addEventListener('click', () => {
             if (state.currentOutputPath) {
-                window.electron.openFolder(state.currentOutputPath);
+                window.api.openFolder(state.currentOutputPath);
             }
         });
     }
@@ -1011,30 +1085,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadQueueItemToDashboard(id);
     };
 
-    window.removeQueueItem = (id) => {
-        const index = state.encodingQueue.findIndex(item => item.id === id);
-        if (index !== -1) {
-            if (id === state.currentlyEncodingItemId) {
-                electron.cancelEncode();
-                state.setCurrentlyEncodingItemId(null);
-                const item = state.encodingQueue[index];
-                if (item) {
-                    item.status = 'pending';
-                    item.state = 'pending';
-                    item.progress = 0;
-                }
-                toggleSidebar(false);
-            } else {
-                state.encodingQueue.splice(index, 1);
-            }
-            updateQueueUI();
-            if (state.encodingQueue.length === 0) {
-                state.setQueueRunning(false);
-                updateQueueStatusUI();
-                toggleSidebar(false);
-            }
-        }
-    };
+
 
     async function loadDownloadItemToDashboard(id) {
         const item = state.encodingQueue.find(i => i.id === id);

@@ -283,13 +283,14 @@ async function loadTrimWaveform(filePath) {
 
     const cached = waveformCache.get(cacheKey);
     if (cached) {
+        console.log('Using cached waveform, length:', cached.length);
         trimWaveformImg.src = 'data:image/png;base64,' + cached;
         trimWaveformWrap.classList.add('has-waveform');
         return;
     }
 
     try {
-        const waveformBase64 = await window.electron.getAudioWaveform({
+        const waveformBase64 = await window.api.getAudioWaveform({
             filePath,
             mode: requestMode,
             width: waveformOptions.width,
@@ -298,13 +299,36 @@ async function loadTrimWaveform(filePath) {
             paletteColor: accentHex
         });
 
+        console.log('Waveform loaded successfully, mode:', requestMode, 'length:', waveformBase64?.length);
+
         if (waveformBase64 && state.trimFilePath === filePath && waveformMode === requestMode) {
             waveformCache.set(cacheKey, waveformBase64);
             trimWaveformImg.src = 'data:image/png;base64,' + waveformBase64;
             trimWaveformWrap.classList.add('has-waveform');
+
+            // Ensure image is visible
+            trimWaveformImg.style.display = 'block';
         }
     } catch (e) {
-        // Ignore waveform failures (no audio or unsupported format)
+        console.error('Waveform generation failed:', e);
+        console.error('Waveform request params:', { filePath, mode: requestMode, width: waveformOptions.width, height: waveformOptions.height, palette: waveformOptions.palette, paletteColor: accentHex });
+
+        // Show error state in waveform container
+        trimWaveformWrap.classList.remove('has-waveform');
+
+        // Remove any existing error message
+        const existingError = trimWaveformWrap.querySelector('.waveform-error');
+        if (existingError) existingError.remove();
+
+        // Add error message
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'waveform-error';
+        errorMsg.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;font-size:12px;text-align:center;';
+        errorMsg.textContent = 'Audio waveform unavailable';
+        trimWaveformWrap.appendChild(errorMsg);
+
+        // Still show the image container for debugging
+        trimWaveformImg.style.display = 'block';
     }
 }
 
@@ -323,7 +347,7 @@ async function preloadTrimWaveforms(filePath) {
         );
         if (waveformCache.has(cacheKey)) return;
         try {
-            const waveformBase64 = await window.electron.getAudioWaveform({
+            const waveformBase64 = await window.api.getAudioWaveform({
                 filePath,
                 mode,
                 width: waveformOptions.width,
@@ -344,11 +368,13 @@ async function resolveBitrateKbps(filePath, metadata) {
     const parsed = parseFloat(metadata?.bitrate) || 0;
     if (parsed > 0) return parsed;
 
-    if (!window.electron || !window.electron.getMetadataFull) return 0;
+    if (!window.api || !window.api.getMetadataFull) return 0;
 
     try {
-        const full = await window.electron.getMetadataFull(filePath);
-        if (!full || full.error) return 0;
+        const full = await window.api.getMetadataFull(filePath);
+        // Note: Tauri errors are thrown, not returned as objects with 'error' property
+        // The check below is kept for robustness but errors are also caught by catch block
+        if (!full) return 0;
 
         const formatBitrate = parseFloat(full.format?.bit_rate) || 0;
         if (formatBitrate > 0) return Math.round(formatBitrate / 1000);
@@ -378,13 +404,13 @@ function updateTrimTimelineVisual() {
     const trimInactiveStart = get('trim-inactive-start');
     const trimInactiveEnd = get('trim-inactive-end');
     const trimRangeHandles = get('trim-range-handles');
-    
+
     if (!state.trimDurationSeconds || !trimInactiveStart || !trimInactiveEnd || !trimRangeHandles) return;
-    
+
     const startPct = (state.trimStartSeconds / state.trimDurationSeconds) * 100;
     const endPct = (state.trimEndSeconds / state.trimDurationSeconds) * 100;
     const activePct = endPct - startPct;
-    
+
     trimInactiveStart.style.width = startPct + '%';
     trimRangeHandles.style.width = activePct + '%';
     trimInactiveEnd.style.width = (100 - endPct) + '%';
@@ -395,7 +421,7 @@ function syncTrimInputsFromVisual() {
     const trimEndInput = get('trim-end');
     const trimmedDurationEl = get('trimmed-duration');
     const estimatedFileSizeEl = get('estimated-file-size');
-    
+
     if (trimStartInput) trimStartInput.value = secondsToTimeString(state.trimStartSeconds);
     if (trimEndInput) trimEndInput.value = secondsToTimeString(state.trimEndSeconds);
     updateTrimTimelineVisual();
@@ -428,7 +454,7 @@ export async function loadTrimQueueItem(item) {
     );
 
     state.setTrimTime(state.trimDurationSeconds, startSeconds, endSeconds);
-    
+
     // Force update of timeline and file size with correct bitrate and trim times
     updateTrimTimelineVisual();
     syncTrimInputsFromVisual();
@@ -446,7 +472,7 @@ export async function loadTrimQueueItem(item) {
 
 function estimateTrimmedFileSize(trimmedLengthSeconds, estimatedFileSizeEl) {
     if (!estimatedFileSizeEl) return;
-    
+
     if (!state.originalFileBitrate || trimmedLengthSeconds <= 0) {
         estimatedFileSizeEl.textContent = 'N/A';
         return;
@@ -458,7 +484,7 @@ function estimateTrimmedFileSize(trimmedLengthSeconds, estimatedFileSizeEl) {
         return;
     }
 
-    const estimatedBytes = (trimmedLengthSeconds * bitrateKbps * 1024) / 8;
+    const estimatedBytes = (trimmedLengthSeconds * bitrateKbps * 1000) / 8;
     const estimatedMB = estimatedBytes / (1024 * 1024);
 
     if (estimatedMB > 1024) {
@@ -485,22 +511,22 @@ export async function handleTrimFileSelection(filePath) {
     const videoCurrentTime = get('video-current-time');
     const trimPlayhead = get('trim-playhead');
     const loadingToken = startTrimLoading();
-    
+
     // Preserve bitrate if same file is being reloaded
     const previousBitrate = (filePath === state.trimFilePath) ? state.originalFileBitrate : 0;
-    
+
     smartSeeker.reset();
     state.setTrimFilePath(filePath);
-    
+
     const name = filePath.split(/[\\\\/]/).pop();
     const ext = name.split('.').pop().toUpperCase();
-    
+
     if (trimFilenameEl) trimFilenameEl.textContent = name;
     if (trimFileIcon) trimFileIcon.textContent = ext;
     if (trimFileDuration) trimFileDuration.textContent = '...';
     if (trimWaveformWrap) trimWaveformWrap.classList.remove('has-waveform');
     if (trimWaveformImg) trimWaveformImg.removeAttribute('src');
-    
+
     // Note: showView() is called by the caller (main.js loadQueueItem) to avoid double animations
 
     if (state.currentEditingQueueId === null && trimAddQueueBtn) {
@@ -511,49 +537,75 @@ export async function handleTrimFileSelection(filePath) {
             Add to Queue
         `;
     }
-    
+
     if (trimmedDurationEl) trimmedDurationEl.textContent = '00:00:00';
     if (estimatedFileSizeEl) estimatedFileSizeEl.textContent = 'Calculating...';
 
     if (trimVideoPreview) {
-        trimVideoPreview.src = filePath;
+        // Use convertFileSrc for Tauri
+        const videoSrc = window.api.convertFileSrc(filePath);
+        console.log('Setting video src:', videoSrc);
+
+        // Configure video element
+        trimVideoPreview.src = videoSrc;
         trimVideoPreview.currentTime = 0;
+        trimVideoPreview.playsInline = true;
+        trimVideoPreview.preload = 'auto';
+
+        // Add error handling for video loading
+        trimVideoPreview.onerror = function (e) {
+            console.error('Video preview load error:', e);
+            console.error('Video src:', trimVideoPreview.src);
+            console.error('Video error code:', trimVideoPreview.error?.code, trimVideoPreview.error?.message);
+        };
+
+        trimVideoPreview.onloadeddata = function () {
+            console.log('Video preview loaded successfully, duration:', trimVideoPreview.duration);
+        };
+
+        // Try to load the video
+        trimVideoPreview.load();
     }
     if (videoCurrentTime) videoCurrentTime.textContent = '00:00';
     if (trimPlayhead) trimPlayhead.style.left = '0%';
 
     try {
-        const metadata = await window.electron.getMetadata(filePath);
+        const metadata = await window.api.getMetadata(filePath);
         const duration = metadata.durationSeconds || 0;
         state.setTrimTime(duration, 0, duration);
-        
+
         // Use metadata bitrate, or a more reliable ffprobe fallback if needed
         const resolvedBitrate = await resolveBitrateKbps(filePath, metadata);
         state.setOriginalFileBitrate(resolvedBitrate || previousBitrate);
-        
+
         if (trimFileDuration) trimFileDuration.textContent = metadata.duration;
 
         if (videoPreviewContainer && metadata.width && metadata.height) {
             videoPreviewContainer.style.aspectRatio = `${metadata.width} / ${metadata.height}`;
         }
-        
+
         if (trimStartInput) trimStartInput.value = '00:00:00';
         if (trimEndInput) trimEndInput.value = secondsToTimeString(duration);
-        
+
         updateTrimTimelineVisual();
         syncTrimInputsFromVisual();
-        
+
         await loadTrimWaveform(filePath);
         preloadTrimWaveforms(filePath);
     } catch (e) {
+        console.error('Failed to load trim file:', e);
         if (trimFileDuration) trimFileDuration.textContent = 'Unknown';
         state.setTrimTime(0, 0, 0);
+        // Update estimated file size to show error state when metadata fails
+        if (estimatedFileSizeEl) {
+            estimatedFileSizeEl.textContent = 'N/A';
+        }
         endTrimLoading(loadingToken);
     }
 
     // Generate thumbnails
     if (state.trimDurationSeconds > 0) {
-        window.electron.getVideoThumbnails({
+        window.api.getVideoThumbnails({
             filePath,
             duration: state.trimDurationSeconds,
             count: 150
@@ -617,7 +669,7 @@ export function setupTrimmerHandlers() {
             }
         });
         trimDropZone.addEventListener('click', async () => {
-            const path = await window.electron.selectFile();
+            const path = await window.api.selectFile();
             if (path) {
                 handleTrimFileSelection(path).then(() => {
                     showView(get('trim-dashboard'));
@@ -686,7 +738,7 @@ export function setupTrimmerHandlers() {
             const clampedEnd = Math.min(state.trimDurationSeconds, Math.max(clampedStart + 1, inputEnd));
             state.setTrimTime(state.trimDurationSeconds, clampedStart, clampedEnd);
             syncTrimInputsFromVisual();
-            
+
             const outputFolderInput = get('output-folder');
             const options = {
                 input: state.trimFilePath,
@@ -729,20 +781,20 @@ export function setupTrimmerHandlers() {
                 alert('Video is too short to trim.');
                 return;
             }
-            
+
             state.setTrimming(true);
             const progressTitle = get('progress-title');
             const progressFilename = get('progress-filename');
             const progressView = get('progress-view');
             const outputFolderInput = get('output-folder');
-            
+
             if (progressTitle) progressTitle.textContent = 'Trimming video...';
             if (progressFilename) progressFilename.textContent = state.trimFilePath.split(/[\\/]/).pop();
-            
+
             showView(progressView);
             state.setLastActiveViewId('trimDropZone');
-            
-            window.electron.trimVideo({
+
+            window.api.trimVideo({
                 input: state.trimFilePath,
                 startSeconds: state.trimStartSeconds,
                 endSeconds: state.trimEndSeconds,
@@ -800,7 +852,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
         const sec = trimTrackXToSeconds(e.clientX);
         let newStart = state.trimStartSeconds;
         let newEnd = state.trimEndSeconds;
-        
+
         if (trimDragging === 'start') {
             newStart = Math.max(0, Math.min(state.trimEndSeconds - 1, sec));
             newEnd = Math.max(newStart + 1, state.trimEndSeconds);
@@ -822,7 +874,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
             newStart = Math.max(0, newStart);
             newEnd = Math.min(state.trimDurationSeconds, Math.max(newStart + 1, newEnd));
         }
-        
+
         state.setTrimTime(state.trimDurationSeconds, newStart, newEnd);
         updateTrimTimelineVisual();
         syncTrimInputsFromVisual();
@@ -966,6 +1018,9 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
 }
 function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlider) {
     const playhead = get('trim-playhead');
+    const playBtn = get('trim-play-btn');
+    const playBtnIcon = get('play-btn-icon');
+    const pauseBtnIcon = get('pause-btn-icon');
     const videoCurrentTime = get('video-current-time');
     const volumeIcon = get('volume-icon');
     const mutedIcon = get('muted-icon');
@@ -1034,21 +1089,51 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
         }
     }
 
+    function updatePlayBtn() {
+        if (!playBtnIcon || !pauseBtnIcon || !videoPreview) return;
+        const isPaused = videoPreview.paused;
+        playBtnIcon.classList.toggle('hidden', !isPaused);
+        pauseBtnIcon.classList.toggle('hidden', isPaused);
+    }
+
+    const togglePlay = (e) => {
+        if (e) {
+            if (e.target.closest('.video-controls') || e.target.closest('.trim-timeline-wrap')) return;
+            e.stopPropagation();
+        }
+        if (!videoPreview) return;
+        if (videoPreview.paused) {
+            videoPreview.play().catch(e => console.error('Play failed:', e));
+            showPlayPauseAnimation(true);
+        } else {
+            videoPreview.pause();
+            showPlayPauseAnimation(false);
+        }
+    };
+
     if (container) {
-        container.addEventListener('click', (e) => {
-            if (e.target.closest('.video-controls')) return;
+        container.addEventListener('click', togglePlay);
+    }
+
+    if (videoOverlay) {
+        videoOverlay.addEventListener('click', togglePlay);
+    }
+
+    if (playBtn) {
+        playBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
             if (!videoPreview) return;
             if (videoPreview.paused) {
-                videoPreview.play();
-                showPlayPauseAnimation(true);
+                videoPreview.play().catch(e => console.error('Play failed:', e));
             } else {
                 videoPreview.pause();
-                showPlayPauseAnimation(false);
             }
         });
     }
 
     if (videoPreview) {
+        videoPreview.addEventListener('play', () => updatePlayBtn());
+        videoPreview.addEventListener('pause', () => updatePlayBtn());
         videoPreview.addEventListener('timeupdate', () => {
             updatePlayhead();
             updateCurrentTime();

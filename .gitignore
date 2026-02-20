@@ -17,6 +17,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 electron-debug.log*
+dev.log
+*.log
 
 .env
 .env.local
@@ -27,3 +29,10 @@ stufftoadd.txt
 depreciated/
 
 assets/
+
+src-tauri/target/
+src-tauri/gen/
+
+update-version.js
+KNOWN-ISSUES.md
+AGENTS.md
