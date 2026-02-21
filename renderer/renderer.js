@@ -197,8 +197,37 @@ async function loadInspector() {
     return inspectorModulePromise;
 }
 
+let videoToGifModulePromise = null;
+let videoToGifInitialized = false;
+
+async function loadVideoToGif() {
+    if (!videoToGifModulePromise) {
+        videoToGifModulePromise = import('./modules/video-to-gif.js').then((mod) => {
+            if (!videoToGifInitialized) {
+                mod.setupVideoToGifHandlers();
+                videoToGifInitialized = true;
+            }
+            return mod;
+        }).catch((err) => {
+            videoToGifModulePromise = null;
+            if (window.api?.logError) window.api.logError('Failed to load video to gif module', err); else console.error('Failed to load video to gif module', err);
+            showPopup('Failed to load video to gif.');
+            throw err;
+        });
+    }
+    return videoToGifModulePromise;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     if (window.api?.logInfo) window.api.logInfo('Renderer initialized'); else console.log('Renderer initialized');
+
+    // Block all clicks on disabled elements globally during capture phase
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.disabled')) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
 
     renderLoaders();
     setupAnimatedNumbers();
@@ -331,6 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectOutputFolderBtn = get('select-output-folder-btn');
     const overwriteFilesCheckbox = get('overwrite-files');
     const notifyOnCompleteCheckbox = get('notify-on-complete');
+    const waitForIndexingCheckbox = get('wait-for-indexing');
     const hwAutoTag = get('hw-auto-tag');
     const showBlobsCheckbox = get('show-blobs');
     const toggleAdvancedBtn = get('toggle-advanced-btn');
@@ -444,6 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (outputFolderInput) state.appSettings.outputFolder = outputFolderInput.value;
         if (overwriteFilesCheckbox) state.appSettings.overwriteFiles = overwriteFilesCheckbox.checked;
         if (notifyOnCompleteCheckbox) state.appSettings.notifyOnComplete = notifyOnCompleteCheckbox.checked;
+        if (waitForIndexingCheckbox) state.appSettings.waitForIndexing = waitForIndexingCheckbox.checked;
         if (showBlobsCheckbox) state.appSettings.showBlobs = showBlobsCheckbox.checked;
         if (cpuThreadsInput) state.appSettings.cpuThreads = parseInt(cpuThreadsInput.value) || 0;
 
@@ -473,6 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (outputFolderInput) outputFolderInput.value = state.appSettings.outputFolder;
             if (overwriteFilesCheckbox) overwriteFilesCheckbox.checked = state.appSettings.overwriteFiles;
             if (notifyOnCompleteCheckbox) notifyOnCompleteCheckbox.checked = state.appSettings.notifyOnComplete;
+            if (waitForIndexingCheckbox) waitForIndexingCheckbox.checked = (state.appSettings.waitForIndexing !== false);
             if (showBlobsCheckbox) showBlobsCheckbox.checked = (state.appSettings.showBlobs !== false);
             if (cpuThreadsInput) cpuThreadsInput.value = state.appSettings.cpuThreads || 0;
 
@@ -737,7 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Setup settings change handlers
-    const changeElements = [outputSuffixInput, defaultFormatSelect, themeSelectAttr, accentColorSelect, workPrioritySelect, overwriteFilesCheckbox, notifyOnCompleteCheckbox, outputFolderInput, showBlobsCheckbox, cpuThreadsInput];
+    const changeElements = [outputSuffixInput, defaultFormatSelect, themeSelectAttr, accentColorSelect, workPrioritySelect, overwriteFilesCheckbox, notifyOnCompleteCheckbox, waitForIndexingCheckbox, outputFolderInput, showBlobsCheckbox, cpuThreadsInput];
     if (hwAccelSelect) {
         hwAccelSelect.addEventListener('change', () => {
             delete hwAccelSelect.dataset.auto;
@@ -852,10 +884,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const navVideoToGif = get('nav-video-to-gif');
+    if (navVideoToGif) {
+        navVideoToGif.addEventListener('click', async () => {
+            clearImageToPdf();
+            await loadVideoToGif();
+            resetNav();
+            navVideoToGif.classList.add('active');
+            showView(get('video-to-gif-drop-zone'));
+            scheduleSidebarIndicatorUpdate();
+        });
+    }
+
     if (sidebar) {
         const observer = new MutationObserver(() => scheduleSidebarIndicatorUpdate());
         observer.observe(sidebar, { attributes: true, subtree: true, attributeFilter: ['class'] });
         window.addEventListener('resize', scheduleSidebarIndicatorUpdate);
+        document.addEventListener('sidebar-tools-reordered', scheduleSidebarIndicatorUpdate);
         scheduleSidebarIndicatorUpdate();
     }
 
@@ -906,16 +951,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Progress event handlers
     electron.onProgress((data) => {
+        // Ensure percent is an integer
+        const percent = Math.round(data.percent) || 0;
+
         if (state.isQueueRunning && state.currentlyEncodingItemId !== null) {
             const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
             if (item) {
-                item.progress = data.percent;
+                item.progress = percent;
                 updateQueueProgress();
             }
         } else {
-            if (progressPercent) progressPercent.textContent = `${data.percent}%`;
+            if (progressPercent) progressPercent.textContent = `${percent}%`;
             if (progressRing) {
-                const offset = 502 - (data.percent / 100) * 502;
+                const offset = 502 - (percent / 100) * 502;
                 progressRing.style.strokeDashoffset = offset;
             }
             if (timeElapsed) timeElapsed.textContent = data.time;
@@ -928,20 +976,31 @@ document.addEventListener('DOMContentLoaded', () => {
         state.setEncodingState(false);
         const wasExtracting = state.isExtracting;
         const wasTrimming = state.isTrimming;
+        const wasVideoToGifing = state.isVideoToGifing;
+
         state.setExtracting(false);
         state.setTrimming(false);
+        state.setVideoToGifing(false);
+
+        // Update progress to 100% on completion
+        if (progressPercent) progressPercent.textContent = '100%';
+        if (progressRing) progressRing.style.strokeDashoffset = 0;
 
         if (completeTitle) {
             if (wasExtracting) completeTitle.textContent = 'Extraction Complete!';
             else if (wasTrimming) completeTitle.textContent = 'Trim Complete!';
+            else if (wasVideoToGifing) completeTitle.textContent = 'GIF Conversion Complete!';
             else completeTitle.textContent = 'Encoding Complete!';
         }
 
         const newEncodeBtn = get('new-encode-btn');
-        if (newEncodeBtn) newEncodeBtn.textContent = 'Encode Another Video';
+        if (newEncodeBtn) {
+            if (wasVideoToGifing) newEncodeBtn.textContent = 'Convert Another Video';
+            else newEncodeBtn.textContent = 'Encode Another Video';
+        }
 
         if (state.appSettings.notifyOnComplete) {
-            const action = wasExtracting ? 'Extraction' : (wasTrimming ? 'Trim' : 'Encoding');
+            const action = wasExtracting ? 'Extraction' : (wasTrimming ? 'Trim' : (wasVideoToGifing ? 'GIF Conversion' : 'Encoding'));
             new Notification(action + ' Complete', { body: `File saved to: ${data.outputPath}` });
         }
 
@@ -1017,7 +1076,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (navExtractAudio) navExtractAudio.classList.add('active');
             } else if (state.lastActiveViewId === 'imageToPdfDropZone') {
                 const imageDropZone = get('image-to-pdf-drop-zone');
+                clearImageToPdf();
                 showView(imageDropZone);
+                resetNav();
+            } else if (state.lastActiveViewId === 'videoToGifDropZone') {
+                const videoToGifDropZone = get('video-to-gif-drop-zone');
+                showView(videoToGifDropZone);
                 resetNav();
             } else {
                 showView(dropZone);
@@ -1046,17 +1110,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (item && item.taskType === 'trim') {
             state.setCurrentEditingQueueId(id);
+            const trimDashboard = get('trim-dashboard');
+            showView(trimDashboard);
+            resetNav();
+            if (navTrim) navTrim.classList.add('active');
+
+            await loadTrimmer();
             const { loadTrimQueueItem } = await loadTrimmer();
-            loadTrimQueueItem(item).then(() => {
-                showView(trimDashboard);
-                resetNav();
-                if (navTrim) navTrim.classList.add('active');
-            });
+            loadTrimQueueItem(item);
             return;
         }
 
         if (item && item.taskType === 'extract') {
             state.setCurrentEditingQueueId(id);
+            const extractAudioDashboard = get('extract-audio-dashboard');
+            showView(extractAudioDashboard);
+            resetNav();
+            if (navExtractAudio) navExtractAudio.classList.add('active');
+
             const { handleExtractFileSelection, updateExtractBitrateVisibility } = await loadExtractAudio();
             handleExtractFileSelection(item.options.input, {
                 format: item.options.format,
@@ -1076,12 +1147,37 @@ document.addEventListener('DOMContentLoaded', () => {
                         Update Item
                     `;
                 }
-                showView(extractAudioDashboard);
-                resetNav();
-                if (navExtractAudio) navExtractAudio.classList.add('active');
             });
             return;
         }
+
+        if (item && item.taskType === 'video-to-gif') {
+            state.setCurrentEditingQueueId(id);
+            const vtgDashboard = get('video-to-gif-dashboard');
+            showView(vtgDashboard);
+            resetNav();
+            const navVtg = get('nav-video-to-gif');
+            if (navVtg) navVtg.classList.add('active');
+
+            await loadVideoToGif();
+            const { handleFileSelection, applyVideoToGifOptionsToUI } = await import('./modules/video-to-gif.js');
+
+            handleFileSelection(item.options.input).then(() => {
+                applyVideoToGifOptionsToUI(item.options);
+
+                const addQueueBtn = get('vtg-add-queue-btn');
+                if (addQueueBtn) {
+                    addQueueBtn.innerHTML = `
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        </svg>
+                        Update Item
+                    `;
+                }
+            });
+            return;
+        }
+
         loadQueueItemToDashboard(id);
     };
 
@@ -1122,10 +1218,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dlQualitySelect) dlQualitySelect.value = item.options.quality;
         if (dlFormatSelect) dlFormatSelect.value = item.options.format;
         if (dlFpsSelect && item.options.fps) dlFpsSelect.value = item.options.fps;
-        if (dlVideoBitrateSelect && item.options.videoBitrate) dlVideoBitrateSelect.value = item.options.videoBitrate;
-        if (dlVideoCodecSelect && item.options.videoCodec) dlVideoCodecSelect.value = item.options.videoCodec;
-        if (dlAudioFormatSelect && item.options.audioFormat) dlAudioFormatSelect.value = item.options.audioFormat;
-        if (dlAudioBitrateSelect && item.options.audioBitrate) dlAudioBitrateSelect.value = item.options.audioBitrate;
+        if (dlVideoBitrateSelect && item.options.video_bitrate) dlVideoBitrateSelect.value = item.options.video_bitrate;
+        if (dlVideoCodecSelect && item.options.video_codec) dlVideoCodecSelect.value = item.options.video_codec;
+        if (dlAudioFormatSelect && item.options.audio_format) dlAudioFormatSelect.value = item.options.audio_format;
+        if (dlAudioBitrateSelect && item.options.audio_bitrate) dlAudioBitrateSelect.value = item.options.audio_bitrate;
 
         if (dlStartBtn) {
             dlStartBtn.innerHTML = `

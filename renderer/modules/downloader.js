@@ -28,6 +28,24 @@ function formatAudioLabel(codec) {
     return codec.toUpperCase();
 }
 
+function getAudioFormatKey(format) {
+    if (!format) return null;
+    const acodec = (format.acodec || '').toLowerCase();
+    const ext = (format.ext || '').toLowerCase();
+
+    if (acodec.includes('opus')) return 'opus';
+    if (acodec.includes('vorbis')) return 'vorbis';
+    if (acodec.includes('mp3')) return 'mp3';
+    if (acodec.includes('flac')) return 'flac';
+    if (acodec.includes('wav') || acodec.includes('pcm')) return 'wav';
+    if (acodec.includes('aac') || acodec.startsWith('mp4a')) return 'm4a';
+
+    if (ext === 'm4a' || ext === 'aac') return 'm4a';
+    if (ext === 'ogg') return 'vorbis';
+
+    return ext || null;
+}
+
 export function setCurrentDownloadUrl(url) {
     currentDownloadUrl = url;
 }
@@ -77,10 +95,7 @@ export function syncFormatCardFromDropdowns() {
     if (isAudioTab) {
         let candidateFormats = currentVideoInfo.formats.filter(f => {
             if (f.vcodec !== 'none') return false;
-            let ext = f.ext;
-            if (ext === 'ogg') ext = 'vorbis';
-            if (ext === 'aac') ext = 'm4a';
-            return ext === audioFormat;
+            return getAudioFormatKey(f) === audioFormat;
         });
 
         if (bitrate && bitrate !== '0') {
@@ -88,10 +103,9 @@ export function syncFormatCardFromDropdowns() {
                 const abr = Math.round(f.abr || f.tbr || 0);
                 return abr.toString() === bitrate;
             });
-            if (matchingFormat) {
-                matchingFormatId = matchingFormat.format_id;
-            }
+            if (matchingFormat) matchingFormatId = matchingFormat.format_id;
         } else if (candidateFormats.length > 0) {
+            // When bitrate is not specified, allow selecting the best available audio format.
             const sorted = candidateFormats.sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
             if (sorted[0]) matchingFormatId = sorted[0].format_id;
         }
@@ -99,9 +113,9 @@ export function syncFormatCardFromDropdowns() {
         let candidateFormats = currentVideoInfo.formats.filter(f => {
             if (f.vcodec === 'none') return false;
             if (f.ext !== format) return false;
-            
+
             if (quality !== 'best' && f.height?.toString() !== quality) return false;
-            
+
             if (fps !== 'none') {
                 const fpsNum = parseFloat(fps);
                 const formatFps = parseFloat(f.fps || 0);
@@ -111,8 +125,10 @@ export function syncFormatCardFromDropdowns() {
             return true;
         });
 
-        if (codec !== 'copy' && candidateFormats.length > 0) {
-            const codecFiltered = candidateFormats.filter(f => {
+        if (codec !== 'copy') {
+            // Strict matching: if user selected a codec, only match formats of that codec.
+            // If there is no match, no format card should be selected.
+            candidateFormats = candidateFormats.filter(f => {
                 const v = f.vcodec || '';
                 let fCodec = 'copy';
                 if (v.startsWith('avc') || v.includes('h264')) fCodec = 'h264';
@@ -121,10 +137,6 @@ export function syncFormatCardFromDropdowns() {
                 else if (v.startsWith('vp9') || v.includes('vp09')) fCodec = 'vp9';
                 return fCodec === codec;
             });
-            
-            if (codecFiltered.length > 0) {
-                candidateFormats = codecFiltered;
-            }
         }
 
         if (candidateFormats.length > 0) {
@@ -138,11 +150,11 @@ export function syncFormatCardFromDropdowns() {
     }
 
     selectedFormatId = matchingFormatId;
-    
+
     document.querySelectorAll('.format-card').forEach(card => {
         card.classList.remove('selected');
     });
-    
+
     if (matchingFormatId) {
         const selectedCard = document.querySelector(`[data-id="${matchingFormatId}"]`);
         if (selectedCard) {
@@ -181,7 +193,7 @@ export function renderFormats() {
 
     const dlFormatTabs = get('dl-format-tabs');
     const hasAnyVideo = formats.some(f => f.vcodec !== 'none');
-    
+
     if (dlFormatTabs) {
         const videoTabBtn = dlFormatTabs.querySelector('[data-tab="video"]');
         if (videoTabBtn) {
@@ -204,25 +216,25 @@ export function renderFormats() {
 
     dlFormatsList.innerHTML = displayFormats.map(f => {
         const isSelected = selectedFormatId === f.format_id;
-        
+
         // Resolution as primary display (or audio indicator)
-        const resolutionText = isAudio 
+        const resolutionText = isAudio
             ? formatAudioLabel(f.acodec)
             : (f.height ? `${f.height}p` : 'Unknown');
-        
+
         // Badges for secondary info
         let badges = [];
-        
+
         // Container/Format
         badges.push(f.ext.toUpperCase());
-        
+
         // Codec info
         const rawCodec = isAudio ? (f.acodec || 'Unknown') : (f.vcodec || 'Unknown');
         const codecName = rawCodec.toUpperCase().split('.')[0].substring(0, 6);
         badges.push(codecName);
-        
+
         const fpsText = (!isAudio && f.fps) ? `${Math.round(f.fps)}fps` : '';
-        
+
         const bitrate = isAudio
             ? (f.abr ? `${Math.round(f.abr)} kbps` : (f.tbr ? `${Math.round(f.tbr)} kbps` : ''))
             : (f.tbr ? `${Math.round(f.tbr)} kbps` : '');
@@ -259,10 +271,10 @@ export function renderFormats() {
         card.addEventListener('click', () => {
             const formatId = card.dataset.id;
             selectedFormatId = formatId;
-            
+
             dlFormatsList.querySelectorAll('.format-card').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
-            
+
             isSyncingUI = true;
             syncDropdownsFromFormatCard(formatId);
             isSyncingUI = false;
@@ -275,8 +287,8 @@ export function renderFormats() {
             dlToggleFormatsBtn.classList.add('hidden');
         } else {
             dlToggleFormatsBtn.classList.remove('hidden');
-            dlToggleFormatsBtn.textContent = isFormatsExpanded 
-                ? 'Show Less' 
+            dlToggleFormatsBtn.textContent = isFormatsExpanded
+                ? 'Show Less'
                 : `Show All (${filtered.length})`;
         }
     }
@@ -330,7 +342,7 @@ function syncDropdownsFromFormatCard(formatId) {
         renderFormats();
         isSyncingUI = false;
     }
-    
+
     if (dlModeSelect && dlModeSelect.value !== (isAudio ? 'audio' : 'video')) {
         isSyncingUI = true;
         setSelectValue(dlModeSelect, isAudio ? 'audio' : 'video');
@@ -339,10 +351,8 @@ function syncDropdownsFromFormatCard(formatId) {
 
     if (isAudio) {
         if (dlAudioFormatSelect) {
-            let ext = format.ext;
-            if (ext === 'ogg') ext = 'vorbis';
-            if (ext === 'aac') ext = 'm4a';
-            setSelectValue(dlAudioFormatSelect, ext, ext.toUpperCase());
+            const key = getAudioFormatKey(format);
+            if (key) setSelectValue(dlAudioFormatSelect, key, key.toUpperCase());
         }
 
         if (dlAudioBitrateSelect) {
@@ -351,7 +361,7 @@ function syncDropdownsFromFormatCard(formatId) {
         }
     } else {
         if (dlFormatSelect) setSelectValue(dlFormatSelect, format.ext, format.ext.toUpperCase());
-        
+
         if (dlQualitySelect && format.height) {
             setSelectValue(dlQualitySelect, format.height.toString(), `${format.height}p`);
         }
@@ -518,16 +528,29 @@ export async function processVideoUrl(url) {
 
                     if (choice) {
                         info.entries.forEach((entry, index) => {
-                            if (!entry.url && entry.id) {
-                                entry.url = `https://www.youtube.com/watch?v=${entry.id}`;
+                            // Try to get the URL from various possible fields
+                            let entryUrl = entry.url || entry.webpage_url || entry.original_url;
+                            
+                            if (!entryUrl && entry.id) {
+                                // Try to construct URL based on extractor type
+                                const extractor = entry.extractor || info.extractor || '';
+                                const extractorKey = extractor.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                
+                                if (extractorKey.includes('youtube') || url.includes('youtube.com') || url.includes('youtu.be')) {
+                                    entryUrl = `https://www.youtube.com/watch?v=${entry.id}`;
+                                } else if (entry.url_direct) {
+                                    entryUrl = entry.url_direct;
+                                }
+                                // For SoundCloud and other platforms, the entry should have a URL field
+                                // if disableFlatPlaylist was used when fetching
                             }
 
-                            if (entry.url) {
+                            if (entryUrl) {
                                 let name = entry.fulltitle || entry.original_title || entry.title || entry.track;
 
                                 if (!name) {
                                     try {
-                                        const urlObj = new URL(entry.url);
+                                        const urlObj = new URL(entryUrl);
                                         const pathParts = urlObj.pathname.split('/').filter(p => p);
                                         if (pathParts.length > 0) {
                                             name = pathParts[pathParts.length - 1]
@@ -537,12 +560,12 @@ export async function processVideoUrl(url) {
                                     } catch (e) { if (window.api?.logWarn) window.api.logWarn('Ignored error: ' + e); }
                                 }
 
-                                let finalName = name || `Video ${entry.id}`;
+                                let finalName = name || `Track ${index + 1}`;
 
                                 let options = {
                                     input: finalName,
                                     fileName: sanitizeFilename(finalName),
-                                    url: entry.url,
+                                    url: entryUrl,
                                     thumbnail: entry.thumbnail || (entry.thumbnails && entry.thumbnails.length > 0 ? entry.thumbnails[entry.thumbnails.length - 1].url : null),
                                     channel: entry.uploader || entry.artist || entry.channel || (entry.user ? entry.user.username : null) || 'Unknown',
                                     mode: 'video',
@@ -558,6 +581,8 @@ export async function processVideoUrl(url) {
                                 }
 
                                 addToQueue(options, 'download');
+                            } else {
+                                if (window.api?.logWarn) window.api.logWarn(`Skipping playlist entry ${index + 1}: no URL available`);
                             }
                         });
 
@@ -734,8 +759,8 @@ export function setupDownloaderHandlers() {
             if (state.isQueueRunning && state.currentlyEncodingItemId !== null) {
                 const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
                 if (item && data.percent !== undefined && data.percent !== null) {
-                    item.progress = parseFloat(data.percent);
-                    updateQueueUI(); 
+                    item.progress = Math.round(parseFloat(data.percent));
+                    updateQueueUI();
                 }
             }
         });
@@ -744,9 +769,15 @@ export function setupDownloaderHandlers() {
             const dlCompleteView = get('dl-complete-view');
             const dlOutputPath = get('dl-output-path');
             const dlUrlInput = get('dl-url');
+            const dlProgressRing = get('dl-progress-ring');
+            const dlProgressPercent = get('dl-progress-percent');
 
             currentDlOutputPath = message.outputPath || '';
             if (dlOutputPath) dlOutputPath.textContent = currentDlOutputPath || 'Output folder';
+
+            // Update progress to 100% on completion
+            if (dlProgressRing) dlProgressRing.style.strokeDashoffset = 0;
+            if (dlProgressPercent) dlProgressPercent.textContent = '100%';
 
             if (state.isQueueRunning && state.currentlyEncodingItemId !== null) {
                 const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
@@ -876,6 +907,22 @@ export function setupDownloaderHandlers() {
         });
     }
 
+    // Format tab switcher (Video/Audio)
+    if (dlFormatTabs) {
+        dlFormatTabs.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                animateAutoHeight(dlFormatsSection, () => {
+                    currentFormatTab = tab;
+                    dlFormatTabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderFormats();
+                    syncFormatCardFromDropdowns();
+                });
+            });
+        });
+    }
+
     [dlQualitySelect, dlFormatSelect, dlVideoCodecSelect, dlFpsSelect, dlAudioFormatSelect, dlAudioBitrateSelect].forEach(el => {
         if (el) {
             el.addEventListener('change', () => {
@@ -945,18 +992,19 @@ export function setupDownloaderHandlers() {
 
             const options = {
                 url: url,
-                fileName: window.currentSingleVideoFileName,
+                file_name: window.currentSingleVideoFileName,
                 thumbnail: (dlThumbnail && dlThumbnail.style.display !== 'none') ? dlThumbnail.src : null,
                 channel: dlVideoChannel ? dlVideoChannel.textContent : 'Unknown',
                 mode: dlModeSelect ? dlModeSelect.value : 'video',
                 quality: dlQualitySelect ? dlQualitySelect.value : 'best',
                 format: dlFormatSelect ? dlFormatSelect.value : 'mp4',
-                formatId: selectedFormatId,
+                format_id: selectedFormatId,
                 fps: dlFpsSelect ? dlFpsSelect.value : 'none',
-                videoBitrate: dlVideoBitrateSelect ? dlVideoBitrateSelect.value : 'none',
-                videoCodec: dlVideoCodecSelect ? dlVideoCodecSelect.value : 'copy',
-                audioFormat: dlAudioFormatSelect ? dlAudioFormatSelect.value : 'mp3',
-                audioBitrate: dlAudioBitrateSelect ? dlAudioBitrateSelect.value : '192k'
+                video_bitrate: dlVideoBitrateSelect ? dlVideoBitrateSelect.value : 'none',
+                video_codec: dlVideoCodecSelect ? dlVideoCodecSelect.value : 'copy',
+                audio_format: dlAudioFormatSelect ? dlAudioFormatSelect.value : 'mp3',
+                audio_bitrate: dlAudioBitrateSelect ? dlAudioBitrateSelect.value : '192k',
+                output_path: get('output-folder')?.value || ''
             };
 
             if (state.currentEditingQueueId !== null) {
@@ -1014,30 +1062,23 @@ export function setupDownloaderHandlers() {
         });
     }
 
-    // Format tab switcher
-    if (dlFormatTabs) {
-        dlFormatTabs.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const tab = btn.dataset.tab;
-                animateAutoHeight(dlFormatsSection, () => {
-                    currentFormatTab = tab;
-                    dlFormatTabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    renderFormats();
-                });
-            });
-        });
-    }
-
     if (dlOpenFileBtn) {
         dlOpenFileBtn.addEventListener('click', () => {
-            if (currentDlOutputPath) window.api.openFile(currentDlOutputPath);
+            if (currentDlOutputPath && currentDlOutputPath.trim() !== '') {
+                window.api.openFile(currentDlOutputPath);
+            } else {
+                showPopup('No file path available. Please wait for download to complete.');
+            }
         });
     }
 
     if (dlOpenFolderBtn) {
         dlOpenFolderBtn.addEventListener('click', () => {
-            if (currentDlOutputPath) window.api.openFolder(currentDlOutputPath);
+            if (currentDlOutputPath && currentDlOutputPath.trim() !== '') {
+                window.api.openFolder(currentDlOutputPath);
+            } else {
+                showPopup('No file path available. Please wait for download to complete.');
+            }
         });
     }
 

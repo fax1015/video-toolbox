@@ -1,5 +1,7 @@
 use log::{error, info};
-use image::{ImageReader, GenericImageView, ImageFormat};
+use image::{DynamicImage, ImageReader, GenericImageView, ImageFormat};
+use image::codecs::jpeg::JpegEncoder;
+use image::ExtendedColorType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,6 +11,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tauri::{Emitter, Manager};
+
 
 // ============================================================================
 // Data Structures
@@ -71,6 +74,7 @@ pub struct ExtractAudioOptions {
     pub mp3_mode: Option<String>,
     pub mp3_quality: Option<String>,
     pub flac_level: Option<String>,
+    pub output_folder: Option<String>,
     pub work_priority: Option<String>,
 }
 
@@ -97,6 +101,19 @@ pub struct DownloadOptions {
     pub video_codec: Option<String>,
     pub file_name: Option<String>,
     pub format_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoToGifOptions {
+    pub input: String,
+    pub fps: Option<u32>,
+    pub width: Option<u32>,
+    pub speed: Option<f64>,
+    pub start_seconds: Option<f64>,
+    pub end_seconds: Option<f64>,
+    pub crop: Option<serde_json::Value>,
+    pub output_folder: Option<String>,
+    pub work_priority: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +242,29 @@ fn get_ffprobe_path() -> String {
     "ffprobe".to_string()
 }
 
+ async fn has_audio_stream(file_path: &str) -> Result<bool, String> {
+     let ffprobe_path = get_ffprobe_path();
+     let output = new_command(&ffprobe_path)
+         .args(&[
+             "-v", "error",
+             "-select_streams", "a:0",
+             "-show_entries", "stream=index",
+             "-of", "csv=p=0",
+             file_path,
+         ])
+         .output()
+         .await
+         .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+
+     if !output.status.success() {
+         let stderr = String::from_utf8_lossy(&output.stderr);
+         return Err(format!("ffprobe failed: {}", stderr));
+     }
+
+     let stdout = String::from_utf8_lossy(&output.stdout);
+     Ok(!stdout.trim().is_empty())
+ }
+
 fn get_ytdlp_path() -> String {
     if let Ok(exe_path) = std::env::current_exe() {
         let bin_path = exe_path.parent().map(|p| p.join("bin").join("yt-dlp.exe"));
@@ -302,14 +342,14 @@ async fn select_files(app: tauri::AppHandle, filters: Option<Vec<Filter>>, _allo
 }
 
 #[tauri::command]
-async fn save_file(app: tauri::AppHandle, _filters: Option<Vec<Filter>>, default_name: Option<String>, _title: Option<String>) -> Result<Option<String>, String> {
-    info!("save_file called with default_name: {:?}", default_name);
+async fn save_file(app: tauri::AppHandle, _filters: Option<Vec<Filter>>, default_path: Option<String>, _title: Option<String>) -> Result<Option<String>, String> {
+    info!("save_file called with default_path: {:?}", default_path);
     
     use tauri_plugin_dialog::DialogExt;
     
     let result = app.dialog()
         .file()
-        .set_file_name(default_name.unwrap_or_else(|| "output.mp4".to_string()))
+        .set_file_name(default_path.unwrap_or_else(|| "output.pdf".to_string()))
         .blocking_save_file();
     
     Ok(result.map(|p| p.to_string()))
@@ -381,7 +421,7 @@ async fn get_encoders() -> Result<EncoderInfo, String> {
     
     let ffmpeg_path = get_ffmpeg_path();
     
-    let output = Command::new(&ffmpeg_path)
+    let output = new_command(&ffmpeg_path)
         .args(&["-encoders"])
         .output()
         .await
@@ -682,7 +722,11 @@ async fn start_encode(app: tauri::AppHandle, options: EncodeOptions) -> Result<(
     let filename = format!("{}{}.{}", stem, suffix, output_ext);
     
     let output_path = if let Some(folder) = &options.output_folder {
-        PathBuf::from(folder).join(&filename)
+        if !folder.is_empty() {
+            PathBuf::from(folder).join(&filename)
+        } else {
+            input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
+        }
     } else {
         input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
     };
@@ -855,9 +899,9 @@ async fn start_encode(app: tauri::AppHandle, options: EncodeOptions) -> Result<(
     info!("Running FFmpeg with args: {:?}", args);
     
     // Spawn FFmpeg process
-    let mut child = Command::new(&ffmpeg_path)
+    let mut child = new_command(&ffmpeg_path)
         .args(&args)
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
@@ -875,50 +919,61 @@ async fn start_encode(app: tauri::AppHandle, options: EncodeOptions) -> Result<(
     
     // Read stderr for progress
     if let Some(stderr) = child.stderr.take() {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
         let app_handle = app.clone();
         
         tokio::spawn(async move {
-            let mut duration_in_seconds = 0.0;
+            let mut reader = BufReader::new(stderr);
+            let mut buf = Vec::new();
+            let mut duration_in_seconds: Option<f64> = None;
             
-            while let Ok(Some(line)) = lines.next_line().await {
-                // Parse duration
-                if duration_in_seconds == 0.0 {
-                    if let Some(cap) = regex::Regex::new(r"Duration: (\d{2}):(\d{2}):(\d{2})\.\d{2}")
-                        .ok()
-                        .and_then(|re| re.captures(&line))
-                    {
-                        let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                        let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                        let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                        duration_in_seconds = h * 3600.0 + m * 60.0 + s;
+            // Pre-compile regex patterns for efficiency
+            let duration_re = regex::Regex::new(r"Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{2})").ok();
+            let time_re = regex::Regex::new(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})").ok();
+            let speed_re = regex::Regex::new(r"speed=\s*(\d+\.?\d*)x").ok();
+            
+            while let Ok(n) = reader.read_until(b'\r', &mut buf).await {
+                if n == 0 { break; }
+                let line = String::from_utf8_lossy(&buf).to_string();
+                let line = line.trim_end_matches(|c: char| c == '\r' || c == '\n').to_string();
+                buf.clear();
+                
+                // Parse duration (only once)
+                if duration_in_seconds.is_none() {
+                    if let Some(ref re) = duration_re {
+                        if let Some(cap) = re.captures(&line) {
+                            let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                            let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                            let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                            duration_in_seconds = Some(h * 3600.0 + m * 60.0 + s);
+                            info!("Parsed duration: {}s", duration_in_seconds.unwrap());
+                        }
                     }
                 }
                 
-                // Parse progress
-                if duration_in_seconds > 0.0 {
-                    if let Some(cap) = regex::Regex::new(r"time=(\d{2}):(\d{2}):(\d{2})\.\d{2}")
-                        .ok()
-                        .and_then(|re| re.captures(&line))
-                    {
+                // Parse progress - emit even without duration (use 0% in that case)
+                if let Some(ref re) = time_re {
+                    if let Some(cap) = re.captures(&line) {
                         let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
                         let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
                         let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
                         let current_time = h * 3600.0 + m * 60.0 + s;
-                        let percent = (current_time / duration_in_seconds * 100.0).min(99.0);
                         
-                        let speed_cap = regex::Regex::new(r"speed=\s*(\d+\.?\d*x)")
-                            .ok()
-                            .and_then(|re| re.captures(&line));
-                        let speed = speed_cap
-                            .and_then(|c| c.get(1))
-                            .map(|m| m.as_str().to_string())
-                            .unwrap_or_else(|| "0.00x".to_string());
+                        // Calculate percent, defaulting to 0 if duration unknown
+                        // Round to integer for cleaner display
+                        let percent = match duration_in_seconds {
+                            Some(dur) if dur > 0.0 => ((current_time / dur * 100.0).min(99.0)).round() as u32,
+                            _ => 0
+                        };
+                        
+                        let speed = speed_re.as_ref()
+                            .and_then(|re| re.captures(&line))
+                            .and_then(|cap| cap.get(1))
+                            .map(|m| format!("{}x", m.as_str()))
+                            .unwrap_or_else(|| "N/A".to_string());
                         
                         let _ = app_handle.emit("encode-progress", serde_json::json!({
                             "percent": percent,
-                            "time": format!("{:02}:{:02}:{:02}", (current_time / 3600.0).floor() as u32, ((current_time % 3600.0) / 60.0).floor() as u32, (current_time % 60.0).floor() as u32),
+                            "time": format!("{:02}:{:02}:{:02}", h as u32, m as u32, s as u32),
                             "speed": speed
                         }));
                     }
@@ -987,7 +1042,18 @@ async fn extract_audio(app: tauri::AppHandle, options: ExtractAudioOptions) -> R
         ("opus", "opus"),
     ]);
     let ext = ext_map.get(options.format.as_str()).unwrap_or(&"mp3");
-    let output_path = input_path.parent().map(|p| p.join(format!("{}_audio.{}", stem, ext))).unwrap_or_else(|| PathBuf::from(format!("{}_audio.{}", stem, ext)));
+    let filename = format!("{}_audio.{}", stem, ext);
+    
+    let output_path = if let Some(folder) = &options.output_folder {
+        if !folder.is_empty() {
+            PathBuf::from(folder).join(&filename)
+        } else {
+            input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
+        }
+    } else {
+        input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
+    };
+    
     let output_path_str = output_path.to_string_lossy().to_string();
     
     // Build args
@@ -1047,9 +1113,9 @@ async fn extract_audio(app: tauri::AppHandle, options: ExtractAudioOptions) -> R
     args.push(output_path_str.clone());
     
     // Spawn FFmpeg
-    let mut child = Command::new(&ffmpeg_path)
+    let mut child = new_command(&ffmpeg_path)
         .args(&args)
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
@@ -1067,40 +1133,52 @@ async fn extract_audio(app: tauri::AppHandle, options: ExtractAudioOptions) -> R
     
     // Read stderr for progress
     if let Some(stderr) = child.stderr.take() {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
         let app_handle = app.clone();
         
         tokio::spawn(async move {
-            let mut duration_in_seconds = 0.0;
+            let mut reader = BufReader::new(stderr);
+            let mut buf = Vec::new();
+            let mut duration_in_seconds: Option<f64> = None;
             
-            while let Ok(Some(line)) = lines.next_line().await {
-                if duration_in_seconds == 0.0 {
-                    if let Some(cap) = regex::Regex::new(r"Duration: (\d{2}):(\d{2}):(\d{2})\.\d{2}")
-                        .ok()
-                        .and_then(|re| re.captures(&line))
-                    {
-                        let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                        let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                        let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                        duration_in_seconds = h * 3600.0 + m * 60.0 + s;
+            // Pre-compile regex patterns for efficiency
+            let duration_re = regex::Regex::new(r"Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{2})").ok();
+            let time_re = regex::Regex::new(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})").ok();
+            
+            while let Ok(n) = reader.read_until(b'\r', &mut buf).await {
+                if n == 0 { break; }
+                let line = String::from_utf8_lossy(&buf).to_string();
+                let line = line.trim_end_matches(|c: char| c == '\r' || c == '\n').to_string();
+                buf.clear();
+                
+                // Parse duration (only once)
+                if duration_in_seconds.is_none() {
+                    if let Some(ref re) = duration_re {
+                        if let Some(cap) = re.captures(&line) {
+                            let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                            let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                            let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                            duration_in_seconds = Some(h * 3600.0 + m * 60.0 + s);
+                        }
                     }
                 }
                 
-                if duration_in_seconds > 0.0 {
-                    if let Some(cap) = regex::Regex::new(r"time=(\d{2}):(\d{2}):(\d{2})\.\d{2}")
-                        .ok()
-                        .and_then(|re| re.captures(&line))
-                    {
+                // Parse progress - emit even without duration
+                if let Some(ref re) = time_re {
+                    if let Some(cap) = re.captures(&line) {
                         let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
                         let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
                         let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
                         let current_time = h * 3600.0 + m * 60.0 + s;
-                        let percent = (current_time / duration_in_seconds * 100.0).min(99.0);
+                        
+                        // Round to integer for cleaner display
+                        let percent = match duration_in_seconds {
+                            Some(dur) if dur > 0.0 => ((current_time / dur * 100.0).min(99.0)).round() as u32,
+                            _ => 0
+                        };
                         
                         let _ = app_handle.emit("encode-progress", serde_json::json!({
                             "percent": percent,
-                            "time": format!("{:02}:{:02}:{:02}", (current_time / 3600.0).floor() as u32, ((current_time % 3600.0) / 60.0).floor() as u32, (current_time % 60.0).floor() as u32),
+                            "time": format!("{:02}:{:02}:{:02}", h as u32, m as u32, s as u32),
                             "speed": "N/A"
                         }));
                     }
@@ -1156,10 +1234,15 @@ async fn trim_video(app: tauri::AppHandle, options: TrimVideoOptions) -> Result<
     // Build output path
     let input_path = PathBuf::from(&options.input);
     let stem = input_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let filename = format!("{}_trimmed.mp4", stem);
     let output_path = if let Some(folder) = &options.output_folder {
-        PathBuf::from(folder).join(format!("{}_trimmed.mp4", stem))
+        if !folder.is_empty() {
+            PathBuf::from(folder).join(&filename)
+        } else {
+            input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
+        }
     } else {
-        input_path.parent().map(|p| p.join(format!("{}_trimmed.mp4", stem))).unwrap_or_else(|| PathBuf::from(format!("{}_trimmed.mp4", stem)))
+        input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
     };
     let output_path_str = output_path.to_string_lossy().to_string();
     
@@ -1177,9 +1260,9 @@ async fn trim_video(app: tauri::AppHandle, options: TrimVideoOptions) -> Result<
     ];
     
     // Spawn FFmpeg
-    let mut child = Command::new(&ffmpeg_path)
+    let mut child = new_command(&ffmpeg_path)
         .args(&args)
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
@@ -1196,26 +1279,37 @@ async fn trim_video(app: tauri::AppHandle, options: TrimVideoOptions) -> Result<
     
     // Read stderr for progress
     if let Some(stderr) = child.stderr.take() {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
         let app_handle = app.clone();
         
         tokio::spawn(async move {
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Some(cap) = regex::Regex::new(r"time=(\d+\.?\d*)")
-                    .ok()
-                    .and_then(|re| re.captures(&line))
-                {
-                    if let Some(current) = cap.get(1).and_then(|m| m.as_str().parse::<f64>().ok()) {
-                        let percent = (current / duration * 100.0).min(99.0);
-                        let t = current.floor() as u32;
-                        let h = t / 3600;
-                        let m = (t % 3600) / 60;
-                        let s = t % 60;
+            let mut reader = BufReader::new(stderr);
+            let mut buf = Vec::new();
+            
+            // Pre-compile regex pattern
+            let time_re = regex::Regex::new(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})").ok();
+            
+            while let Ok(n) = reader.read_until(b'\r', &mut buf).await {
+                if n == 0 { break; }
+                let line = String::from_utf8_lossy(&buf).to_string();
+                let line = line.trim_end_matches(|c: char| c == '\r' || c == '\n').to_string();
+                buf.clear();
+                
+                if let Some(ref re) = time_re {
+                    if let Some(cap) = re.captures(&line) {
+                        let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                        let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                        let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                        let current = h * 3600.0 + m * 60.0 + s;
+
+                        let percent = if duration > 0.0 {
+                            ((current / duration * 100.0).min(99.0)).round() as u32
+                        } else {
+                            0
+                        };
                         
                         let _ = app_handle.emit("encode-progress", serde_json::json!({
                             "percent": percent,
-                            "time": format!("{:02}:{:02}:{:02}", h, m, s),
+                            "time": format!("{:02}:{:02}:{:02}", h as u32, m as u32, s as u32),
                             "speed": "N/A"
                         }));
                     }
@@ -1305,6 +1399,229 @@ async fn cancel_encode(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+
+#[tauri::command]
+async fn video_to_gif(app: tauri::AppHandle, options: VideoToGifOptions) -> Result<(), String> {
+    info!("video_to_gif called for: {}", options.input);
+    
+    let app_state = app.state::<Arc<AppState>>().inner().clone();
+    let ffmpeg_path = get_ffmpeg_path();
+    
+    // Get original duration for progress tracking
+    let mut duration_secs = 100.0;
+    if let Ok(metadata) = get_metadata(options.input.clone()).await {
+        if let Some(ds) = metadata.duration_seconds {
+            duration_secs = ds;
+        }
+    }
+
+    // If a trim range is specified, use it for progress so percentages make sense
+    let mut effective_duration_secs = duration_secs;
+    if let (Some(start), Some(end)) = (options.start_seconds, options.end_seconds) {
+        if end > start {
+            effective_duration_secs = (end - start).max(0.1);
+        }
+    }
+    
+    // Build output path
+    let input_path = PathBuf::from(&options.input);
+    let stem = input_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let filename = format!("{}_converted.gif", stem);
+    let output_path = if let Some(folder) = &options.output_folder {
+        if !folder.is_empty() {
+            PathBuf::from(folder).join(&filename)
+        } else {
+            input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
+        }
+    } else {
+        input_path.parent().map(|p| p.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename))
+    };
+    let output_path_str = output_path.to_string_lossy().to_string();
+    
+    let fps = options.fps.unwrap_or(15);
+    let scale = options.width.unwrap_or(480);
+    let speed = options.speed.unwrap_or(1.0);
+
+    let mut crop_filter = String::new();
+    if let Some(crop_val) = &options.crop {
+        let x = crop_val.get("x").and_then(|v| v.as_i64()).unwrap_or(0);
+        let y = crop_val.get("y").and_then(|v| v.as_i64()).unwrap_or(0);
+        let w = crop_val.get("w").and_then(|v| v.as_i64()).unwrap_or(0);
+        let h = crop_val.get("h").and_then(|v| v.as_i64()).unwrap_or(0);
+        if w > 0 && h > 0 {
+            crop_filter = format!(",crop={}:{}:{}:{}", w, h, x, y);
+        }
+    }
+
+    let mut speed_filter = String::new();
+    if speed.is_finite() && (speed - 1.0).abs() > 0.00001 {
+        // speed up: setpts=PTS/<speed>
+        speed_filter = format!(",setpts=PTS/{}", speed);
+    }
+    
+    // FFmpeg command to create a GIF
+    // Using a palettegen/paletteuse filter chain for better quality GIFs
+    // Order: crop -> speed -> fps -> scale -> palette
+    let filters = format!(
+        "[0:v]{}{}fps={},scale={}:-1:flags=lanczos[v];[v]split[v1][v2];[v1]palettegen=stats_mode=diff[p];[v2][p]paletteuse=dither=sierra2_4a[out]",
+        crop_filter,
+        speed_filter,
+        fps,
+        scale
+    );
+    
+    let mut args = vec!["-y".to_string()];
+
+    // Trim: use input-side -ss to reduce work (fast seek), and -t for length.
+    if let Some(start) = options.start_seconds {
+        if start.is_finite() && start > 0.0 {
+            args.push("-ss".to_string());
+            args.push(format!("{:.3}", start));
+        }
+    }
+
+    args.push("-i".to_string());
+    args.push(options.input.clone());
+
+    if let (Some(start), Some(end)) = (options.start_seconds, options.end_seconds) {
+        if start.is_finite() && end.is_finite() && end > start {
+            args.push("-t".to_string());
+            args.push(format!("{:.3}", end - start));
+        }
+    }
+
+    args.push("-filter_complex".to_string());
+    args.push(filters);
+    args.push("-map".to_string());
+    args.push("[out]".to_string());
+    args.push(output_path_str.clone());
+    
+    // Spawn FFmpeg
+    let mut child = new_command(&ffmpeg_path)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
+    
+    // Store process reference
+    let child_pid = child.id();
+    {
+        let mut pid = app_state.current_pid.lock().await;
+        *pid = child_pid;
+    }
+    {
+        let mut output_path = app_state.current_output_path.lock().await;
+        *output_path = Some(output_path_str.clone());
+    }
+    
+    // Track priority using system tools
+    #[cfg(target_os = "windows")]
+    if let Some(priority) = &options.work_priority {
+        if let Some(pid_val) = child_pid {
+            use std::os::windows::process::CommandExt;
+            match priority.as_str() {
+                "low" | "idle" => {
+                    let _ = std::process::Command::new("powershell")
+                        .args(&["-Command", &format!("(Get-Process -Id {}).PriorityClass = 'Idle'", pid_val)])
+                        .creation_flags(0x08000000)
+                        .spawn();
+                }
+                "high" => {
+                    let _ = std::process::Command::new("powershell")
+                        .args(&["-Command", &format!("(Get-Process -Id {}).PriorityClass = 'High'", pid_val)])
+                        .creation_flags(0x08000000)
+                        .spawn();
+                }
+                _ => {} // Normal priority is default
+            }
+        }
+    }
+    
+    // Read stderr for progress
+    if let Some(stderr) = child.stderr.take() {
+        let app_handle = app.clone();
+        let app_state_clone = app_state.clone();
+        
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            let mut buf = Vec::new();
+            
+            // Pre-compile regex pattern
+            let time_re = regex::Regex::new(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})").ok();
+            
+            while let Ok(n) = reader.read_until(b'\r', &mut buf).await {
+                if n == 0 { break; }
+                let line = String::from_utf8_lossy(&buf).to_string();
+                let line = line.trim_end_matches(|c: char| c == '\r' || c == '\n').to_string();
+                buf.clear();
+                
+                // Check for cancellation during the stderr reading loop
+                if app_state_clone.is_cancelling.lock().await.clone() {
+                    break;
+                }
+                
+                // Extract time using pre-compiled regex
+                if let Some(ref re) = time_re {
+                    if let Some(cap) = re.captures(&line) {
+                        let h: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                        let m: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                        let s: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                        let current_secs = h * 3600.0 + m * 60.0 + s;
+                        
+                        // Round to integer for cleaner display, cap at 99%
+                        let percent = if effective_duration_secs > 0.0 {
+                            ((current_secs / effective_duration_secs * 100.0).min(99.0)).round() as u32
+                        } else {
+                            0
+                        };
+                        
+                        let _ = app_handle.emit("encode-progress", serde_json::json!({
+                            "percent": percent,
+                            "time": format!("{:02}:{:02}:{:02}", h as u32, m as u32, s as u32),
+                            "speed": "N/A"
+                        }));
+                    }
+                }
+            }
+        });
+    }
+    
+    let app_handle_wait = app.clone();
+    
+    let status = child.wait().await.map_err(|e| format!("Failed to wait for child: {}", e))?;
+    
+    // Clean up after process completes
+    let mut pid_guard = app_state.current_pid.lock().await;
+    *pid_guard = None;
+    
+    let mut path_guard = app_state.current_output_path.lock().await;
+    *path_guard = None;
+    
+    let is_cancelled = *app_state.is_cancelling.lock().await;
+    if is_cancelled {
+        info!("Video to GIF creation cancelled");
+        let _ = app_handle_wait.emit("encode-cancelled", ());
+        
+        // Try to clean up partial output
+        if std::path::Path::new(&output_path_str).exists() {
+            let _ = std::fs::remove_file(&output_path_str);
+        }
+        
+        return Ok(());
+    }
+    
+    if status.success() {
+        info!("Video to GIF creation completed successfully");
+        let _ = app_handle_wait.emit("encode-complete", serde_json::json!({ "outputPath": output_path_str }));
+        Ok(())
+    } else {
+        error!("Video to GIF creation failed with status: {}", status);
+        let _ = app_handle_wait.emit("encode-error", serde_json::json!({ "message": format!("Process exited with status: {}", status) }));
+        Err(format!("Process exited with status: {}", status))
+    }
+}
+
 // ============================================================================
 // Media Processing Commands
 // ============================================================================
@@ -1314,6 +1631,10 @@ async fn get_audio_waveform(file_path: String, mode: Option<String>, width: Opti
     info!("get_audio_waveform called for: {}", file_path);
     
     let ffmpeg_path = get_ffmpeg_path();
+    let has_audio = has_audio_stream(&file_path).await?;
+    if !has_audio {
+        return Err("No audio stream found in file".to_string());
+    }
     let w = width.unwrap_or(800);
     let h = height.unwrap_or(120);
     let p = palette.unwrap_or_else(|| "heatmap".to_string());
@@ -1391,9 +1712,12 @@ async fn get_video_thumbnails(file_path: String, duration: f64, count: Option<u3
     };
     
     let desired_count = count.unwrap_or(50).min(max_count).min(300);
-    let fps = (desired_count as f64 + 2.0) / duration;
     let cols = 10;
     let rows = (desired_count as f64 / cols as f64).ceil() as u32;
+    // Recalculate count to be exactly what the tile layout expects, to avoid FFmpeg getting stuck
+    let actual_count = cols * rows;
+    
+    let fps = (actual_count as f64) / duration;
     
     let tile_layout = format!("{}x{}", cols, rows);
     let vf = format!("fps={},scale=-1:{},tile={}", fps, target_height, tile_layout);
@@ -1423,7 +1747,13 @@ async fn get_video_thumbnails(file_path: String, duration: f64, count: Option<u3
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
     
     if !output.status.success() {
-        return Err("FFmpeg failed to generate thumbnails".to_string());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("FFmpeg thumbnail generation failed: {}", stderr);
+        return Err(format!("FFmpeg failed to generate thumbnails: {}", stderr));
+    }
+    
+    if output.stdout.is_empty() {
+        return Err("FFmpeg produced no output".to_string());
     }
     
     Ok(ThumbnailResult {
@@ -1460,21 +1790,35 @@ async fn get_video_info(url: String, disable_flat_playlist: Option<bool>) -> Res
     }
     
     let ytdlp_path = get_ytdlp_path();
+
+    let force_single_video = url::Url::parse(&url)
+        .ok()
+        .map(|u| {
+            let has_v = u.query_pairs().any(|(k, v)| k == "v" && !v.is_empty());
+            let has_list = u.query_pairs().any(|(k, v)| k == "list" && !v.is_empty());
+            let path_is_watch = u.path().eq_ignore_ascii_case("/watch");
+            path_is_watch && has_v && has_list
+        })
+        .unwrap_or(false);
     
     let mut args = vec![
-        "--dump-json".to_string(),
+        "--dump-single-json".to_string(),
         "--no-download".to_string(),
         "--no-warnings".to_string(),
         "--user-agent".to_string(),
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
         url.clone(),
     ];
+
+    if force_single_video {
+        args.push("--no-playlist".to_string());
+    }
     
     if !disable_flat_playlist.unwrap_or(false) {
         args.push("--flat-playlist".to_string());
     }
     
-    let output = Command::new(&ytdlp_path)
+    let output = new_command(&ytdlp_path)
         .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1501,67 +1845,97 @@ async fn get_video_info(url: String, disable_flat_playlist: Option<bool>) -> Res
     
     let stdout = String::from_utf8_lossy(&output.stdout);
     
-    // Try to parse JSON
-    match serde_json::from_str::<serde_json::Value>(&stdout) {
-        Ok(info) => {
-            if info.get("_type").and_then(|v| v.as_str()) == Some("playlist") {
-                Ok(VideoInfoResult {
-                    is_playlist: true,
-                    title: info.get("title").and_then(|v| v.as_str()).map(String::from),
-                    thumbnail: None,
-                    duration: None,
-                    channel: None,
-                    is_video: None,
-                    formats: None,
-                    url: Some(url),
-                    count: info.get("entries").and_then(|e| e.as_array()).map(|a| a.len() as u32),
-                    entries: info.get("entries").and_then(|e| e.as_array()).map(|a| a.clone()),
-                    error: None,
-                })
-            } else {
-                let duration_secs = info.get("duration").and_then(|v| v.as_i64());
-                let duration_str = duration_secs.map(|d| {
-                    let h = d / 3600;
-                    let m = (d % 3600) / 60;
-                    let s = d % 60;
-                    if h > 0 {
-                        format!("{}:{:02}:{:02}", h, m, s)
-                    } else {
-                        format!("{}:{:02}", m, s)
-                    }
-                });
-                
-                Ok(VideoInfoResult {
-                    is_playlist: false,
-                    title: info.get("title").and_then(|v| v.as_str()).map(String::from),
-                    thumbnail: info.get("thumbnail").and_then(|v| v.as_str()).map(String::from),
-                    duration: duration_str,
-                    channel: info.get("uploader").or_else(|| info.get("channel")).and_then(|v| v.as_str()).map(String::from),
-                    is_video: info.get("vcodec").and_then(|v| v.as_str()).map(|v| v != "none"),
-                    formats: info.get("formats").and_then(|v| v.as_array()).map(|a| a.clone()),
-                    url: Some(url),
-                    count: None,
-                    entries: None,
-                    error: None,
-                })
+    // Some extractors may still output multiple JSON objects joined by newlines.
+    // We try to parse the first valid one, while still preferring playlist objects if present.
+    let json_lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+    
+    if json_lines.is_empty() {
+        return Ok(VideoInfoResult {
+            is_playlist: false,
+            title: None,
+            thumbnail: None,
+            duration: None,
+            channel: None,
+            is_video: None,
+            formats: None,
+            url: Some(url),
+            count: None,
+            entries: None,
+            error: Some("No JSON output from yt-dlp".to_string()),
+        });
+    }
+
+    let mut video_info = None;
+    let mut playlist_info = None;
+    let mut last_err = "No valid JSON found in yt-dlp output".to_string();
+
+    for line in json_lines {
+        match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(info) => {
+                if info.get("_type").and_then(|v| v.as_str()) == Some("playlist") {
+                    playlist_info = Some(VideoInfoResult {
+                        is_playlist: true,
+                        title: info.get("title").and_then(|v| v.as_str()).map(String::from),
+                        thumbnail: None,
+                        duration: None,
+                        channel: None,
+                        is_video: None,
+                        formats: None,
+                        url: Some(url.clone()),
+                        count: info.get("entries").and_then(|e| e.as_array()).map(|a| a.len() as u32),
+                        entries: info.get("entries").and_then(|e| e.as_array()).map(|a| a.clone()),
+                        error: None,
+                    });
+                } else if video_info.is_none() {
+                    let duration_secs = info.get("duration").and_then(|v| v.as_i64());
+                    let duration_str = duration_secs.map(|d| {
+                        let h = d / 3600;
+                        let m = (d % 3600) / 60;
+                        let s = d % 60;
+                        if h > 0 { format!("{}:{:02}:{:02}", h, m, s) } else { format!("{}:{:02}", m, s) }
+                    });
+                    
+                    video_info = Some(VideoInfoResult {
+                        is_playlist: false,
+                        title: info.get("title").and_then(|v| v.as_str()).map(String::from),
+                        thumbnail: info.get("thumbnail").and_then(|v| v.as_str()).map(String::from),
+                        duration: duration_str,
+                        channel: info.get("uploader").or_else(|| info.get("channel")).and_then(|v| v.as_str()).map(String::from),
+                        is_video: info.get("vcodec").and_then(|v| v.as_str()).map(|v| v != "none"),
+                        formats: info.get("formats").and_then(|v| v.as_array()).map(|a| a.clone()),
+                        url: Some(url.clone()),
+                        count: None,
+                        entries: None,
+                        error: None,
+                    });
+                }
+            }
+            Err(e) => {
+                last_err = format!("Failed to parse video info: {}", e);
             }
         }
-        Err(e) => {
-            Ok(VideoInfoResult {
-                is_playlist: false,
-                title: None,
-                thumbnail: None,
-                duration: None,
-                channel: None,
-                is_video: None,
-                formats: None,
-                url: Some(url),
-                count: None,
-                entries: None,
-                error: Some(format!("Failed to parse video info: {}", e)),
-            })
-        }
     }
+
+    if let Some(playlist) = playlist_info {
+        return Ok(playlist);
+    }
+    if let Some(video) = video_info {
+        return Ok(video);
+    }
+
+    Ok(VideoInfoResult {
+        is_playlist: false,
+        title: None,
+        thumbnail: None,
+        duration: None,
+        channel: None,
+        is_video: None,
+        formats: None,
+        url: Some(url),
+        count: None,
+        entries: None,
+        error: Some(last_err),
+    })
 }
 
 #[tauri::command]
@@ -1577,9 +1951,15 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
     let ffmpeg_path = get_ffmpeg_path();
     
     // Get output folder
-    let output_folder = options.output_path.clone().unwrap_or_else(|| {
+    let output_folder = if let Some(path) = options.output_path.as_ref() {
+        if !path.is_empty() {
+            path.clone()
+        } else {
+            dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")).to_string_lossy().to_string()
+        }
+    } else {
         dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")).to_string_lossy().to_string()
-    });
+    };
     
     let mut args = Vec::new();
     
@@ -1613,14 +1993,11 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
         // Video mode
         if let Some(format) = &options.format {
             match format.as_str() {
-                "mp4" => args.push("--merge-output-format".to_string()),
-                "mkv" => args.push("--merge-output-format".to_string()),
-                "mov" => args.push("--merge-output-format".to_string()),
-                "webm" => args.push("--merge-output-format".to_string()),
+                "mp4" | "mkv" | "mov" | "webm" => {
+                    args.push("--merge-output-format".to_string());
+                    args.push(format.clone());
+                }
                 _ => {}
-            }
-            if let Some(f) = args.pop() {
-                args.push(f);
             }
         }
         
@@ -1638,7 +2015,17 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
             args.push("bestvideo+bestaudio/best".to_string());
         } else if let Some(quality) = &options.quality {
             args.push("-f".to_string());
-            args.push(format!("bestvideo[height<={}]+bestaudio/best[height<={}]/best", quality, quality));
+            // Prefer a stream at-or-below the requested height.
+            // If a specific container format is selected, prefer that container for the video stream,
+            // but still allow fallbacks if it's not available.
+            let container = options.format.clone().unwrap_or_else(|| "mp4".to_string());
+            let selector = format!(
+                "bv*[height<={h}][ext={ext}]+ba/b[height<={h}][ext={ext}]/bv*[height<={h}]+ba/b[height<={h}]/best",
+                h = quality,
+                ext = container
+            );
+            info!("yt-dlp format selector (requested height <= {}): {}", quality, selector);
+            args.push(selector);
         }
         
         // Post-processing
@@ -1663,8 +2050,12 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
             }
             
             if let Some(bitrate) = &options.video_bitrate {
-                if bitrate != "none" && regex::Regex::new(r"^\d+[kKmM]$").is_ok() {
-                    ffmpeg_args.extend(["-b:v", bitrate]);
+                if bitrate != "none" {
+                    if let Ok(re) = regex::Regex::new(r"^\d+[kKmM]$") {
+                        if re.is_match(bitrate) {
+                            ffmpeg_args.extend(["-b:v", bitrate]);
+                        }
+                    }
                 }
             }
             
@@ -1684,13 +2075,11 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
     }
     
     args.push("--progress".to_string());
-    args.push("--newline".to_string());
     args.push("--no-cache-dir".to_string());
     args.push("--no-check-certificates".to_string());
     args.push("--force-ipv4".to_string());
     args.push("--force-overwrites".to_string());
-    args.push("--postprocessor-args".to_string());
-    args.push("ffmpeg:-y".to_string());
+
     args.push("--user-agent".to_string());
     args.push("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string());
     args.push(url.clone());
@@ -1712,33 +2101,60 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
     }
     
     let app_handle = app.clone();
+    let final_path = Arc::new(Mutex::new(output_folder.clone()));
+    let final_path_clone = final_path.clone();
+    let expected_filename = Arc::new(Mutex::new(None::<String>));
+    let expected_filename_clone = expected_filename.clone();
     
-    // Read stdout for progress
+    // Pre-compute expected file extension based on mode
+    let expected_ext = if options.mode.as_deref() == Some("audio") {
+        options.audio_format.clone().unwrap_or_else(|| "mp3".to_string())
+    } else {
+        options.format.clone().unwrap_or_else(|| "mp4".to_string())
+    };
+    let file_name_for_path = options.file_name.clone();
+    let output_folder_for_path = output_folder.clone();
+    
+    // Read stdout for progress and capture final path
     if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        let mut lines = reader.lines();
-        
         tokio::spawn(async move {
-            let _current_download_path: Option<String> = None;
+            let mut reader = BufReader::new(stdout);
+            let mut buf = Vec::new();
+            let mut pending = Vec::<u8>::new();
             
-            while let Ok(Some(line)) = lines.next_line().await {
-                let str = line.trim();
-                if str.is_empty() {
-                    continue;
+            // Pre-compile regex patterns for efficiency
+            let progress_re = regex::Regex::new(r"\[download\]\s+(\d+\.?\d*)%").ok();
+            let size_re = regex::Regex::new(r"of\s+~?(\d+\.?\d*[KMG]iB)").ok();
+            let speed_re = regex::Regex::new(r"at\s+(\d+\.?\d*[KMG]iB/s)").ok();
+            let eta_re = regex::Regex::new(r"ETA\s+(\d{2}:\d{2})").ok();
+            let tag_re = regex::Regex::new(r"^\[([^\]]+)\]").ok();
+            let already_downloaded_re = regex::Regex::new(r#"\[download\]\s+(.+?)\s+has already been downloaded"#).ok();
+            
+            // yt-dlp progress may update with CR-only (\r) or LF-only (\n). Drain as raw bytes and
+            // split on either delimiter so we always consume output and always parse progress.
+            loop {
+                buf.resize(4096, 0);
+                let n = match tokio::io::AsyncReadExt::read(&mut reader, &mut buf).await {
+                    Ok(n) => n,
+                    Err(_) => 0,
+                };
+                if n == 0 {
+                    break;
                 }
-                
-                // Parse progress
-                let progress_re = regex::Regex::new(r"\[download\]\s+(\d+\.?\d*)%").unwrap();
-                let size_re = regex::Regex::new(r"of\s+~?(\d+\.?\d*[KMG]iB)").unwrap();
-                let speed_re = regex::Regex::new(r"at\s+(\d+\.?\d*[KMG]iB/s)").unwrap();
-                let eta_re = regex::Regex::new(r"ETA\s+(\d{2}:\d{2})").unwrap();
-                
-                let dest_re = regex::Regex::new(r"Destination:\s+(.*)").unwrap();
-                if let Some(cap) = dest_re.captures(str) {
-                    if !cap.get(1).map(|m| m.as_str().contains("...")).unwrap_or(true) {
-                        let _ = cap.get(1).map(|m| m.as_str().to_string());
+                pending.extend_from_slice(&buf[..n]);
+
+                while let Some(idx) = pending.iter().position(|b| *b == b'\r' || *b == b'\n') {
+                    let mut segment = pending.drain(..=idx).collect::<Vec<u8>>();
+                    if let Some(last) = segment.last() {
+                        if *last == b'\r' || *last == b'\n' {
+                            segment.pop();
+                        }
                     }
-                }
+                    let raw_line = String::from_utf8_lossy(&segment).to_string();
+                    let str = raw_line.trim_end_matches(|c: char| c == '\r' || c == '\n').trim();
+                    if str.is_empty() {
+                        continue;
+                    }
                 
                 let mut progress_data = DownloadProgress {
                     percent: None,
@@ -1748,75 +2164,249 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
                     status: None,
                 };
                 
-                if let Some(cap) = progress_re.captures(str) {
-                    progress_data.percent = cap.get(1).and_then(|m| m.as_str().parse::<f64>().ok());
+                if let Some(ref re) = progress_re {
+                    if let Some(cap) = re.captures(str) {
+                        // Don't round to avoid stuck at 0% for too long on large files
+                        progress_data.percent = cap.get(1).and_then(|m| m.as_str().parse::<f64>().ok());
+                    }
                 }
-                if let Some(cap) = size_re.captures(str) {
-                    progress_data.size = cap.get(1).map(|m| m.as_str().to_string());
+                if let Some(ref re) = size_re {
+                    if let Some(cap) = re.captures(str) {
+                        progress_data.size = cap.get(1).map(|m| m.as_str().to_string());
+                    }
                 }
-                if let Some(cap) = speed_re.captures(str) {
-                    progress_data.speed = cap.get(1).map(|m| m.as_str().to_string());
+                if let Some(ref re) = speed_re {
+                    if let Some(cap) = re.captures(str) {
+                        progress_data.speed = cap.get(1).map(|m| m.as_str().to_string());
+                    }
                 }
-                if let Some(cap) = eta_re.captures(str) {
-                    progress_data.eta = cap.get(1).map(|m| m.as_str().to_string());
+                if let Some(ref re) = eta_re {
+                    if let Some(cap) = re.captures(str) {
+                        progress_data.eta = cap.get(1).map(|m| m.as_str().to_string());
+                    }
                 }
-                
-                // Status
-                let tag_re = regex::Regex::new(r"^\[([^\]]+)\]").unwrap();
-                if let Some(cap) = tag_re.captures(str) {
-                    let tag = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-                    if tag == "Merger" {
-                        progress_data.status = Some("Merging formats...".to_string());
-                    } else if tag == "ExtractAudio" {
-                        progress_data.status = Some("Extracting audio...".to_string());
-                    } else if tag == "info" {
-                        if str.contains("Downloading webpage") {
-                            progress_data.status = Some("Connecting...".to_string());
-                        } else if str.contains("Downloading m3u8") {
-                            progress_data.status = Some("Preparing stream...".to_string());
-                        } else {
-                            progress_data.status = Some("Extracting metadata...".to_string());
-                        }
-                    } else if tag == "download" && progress_data.percent.is_none() {
-                        if str.contains("Destination:") {
-                            progress_data.status = Some("Creating file...".to_string());
+
+                // Final path tracking
+                // yt-dlp/ffmpeg postprocessors may emit lines like:
+                // "[download] Destination: ...webm" then "[ExtractAudio] Destination: ...mp3"
+                // Prefer the latest Destination path we see.
+                if let Some(idx) = str.find("Destination:") {
+                    let candidate = str[(idx + "Destination:".len())..].trim();
+                    let candidate = candidate.trim_matches('"').trim_matches('\'');
+                    if !candidate.is_empty() {
+                        let mut fp = final_path_clone.lock().await;
+                        *fp = candidate.to_string();
+                        let mut ef = expected_filename_clone.lock().await;
+                        *ef = Some(candidate.to_string());
+                        progress_data.status = Some("Creating output file...".to_string());
+                    }
+                } else if str.contains("Merging formats into") {
+                    if let Some(start) = str.find("Merging formats into") {
+                        let candidate = str[(start + "Merging formats into".len())..].trim();
+                        let candidate = candidate.trim_matches('"').trim_matches('\'');
+                        if !candidate.is_empty() {
+                            let mut fp = final_path_clone.lock().await;
+                            *fp = candidate.to_string();
+                            let mut ef = expected_filename_clone.lock().await;
+                            *ef = Some(candidate.to_string());
+                            progress_data.status = Some("Merging audio and video...".to_string());
                         }
                     }
                 }
-                
+
+                // Check for "already downloaded" message
+                if let Some(ref re) = already_downloaded_re {
+                    if let Some(cap) = re.captures(str) {
+                        if let Some(path) = cap.get(1) {
+                            let mut fp = final_path_clone.lock().await;
+                            *fp = path.as_str().to_string();
+                            let mut ef = expected_filename_clone.lock().await;
+                            *ef = Some(path.as_str().to_string());
+                        }
+                    }
+                }
+
+                // Status
+                if let Some(ref re) = tag_re {
+                    if let Some(cap) = re.captures(str) {
+                        let tag = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+                        if tag == "Merger" {
+                            progress_data.status = Some("Merging audio and video...".to_string());
+                        } else if tag == "ExtractAudio" {
+                            progress_data.status = Some("Extracting audio...".to_string());
+                        } else if tag == "info" {
+                            if str.contains("Downloading webpage") {
+                                progress_data.status = Some("Fetching metadata...".to_string());
+                            } else if str.contains("Downloading m3u8") {
+                                progress_data.status = Some("Preparing stream...".to_string());
+                            } else if str.contains("Extracting") {
+                                progress_data.status = Some("Extracting metadata...".to_string());
+                            } else {
+                                progress_data.status = Some("Extracting metadata...".to_string());
+                            }
+                        } else if tag == "download" && progress_data.percent.is_none() {
+                            if str.contains("Destination:") {
+                                progress_data.status = Some("Creating file...".to_string());
+                            } else if str.contains("Downloading") {
+                                progress_data.status = Some("Starting download...".to_string());
+                            }
+                        }
+                    }
+                }
+
+                if let Some(p) = progress_data.percent {
+                    if p >= 99.9 {
+                        progress_data.status.get_or_insert_with(|| "Finalizing download...".to_string());
+                    } else {
+                        progress_data.status.get_or_insert_with(|| "Downloading...".to_string());
+                    }
+                }
+
                 if progress_data.percent.is_some() || progress_data.status.is_some() {
                     let _ = app_handle.emit("download-progress", &progress_data);
                 }
             }
-        });
-    }
-    
-    // Read stderr
-    if let Some(stderr) = child.stderr.take() {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
-        let app_handle = app.clone();
-        
-        tokio::spawn(async move {
-            while let Ok(Some(line)) = lines.next_line().await {
-                let err_str = line.trim();
+        }
+    });
+}
+
+let stderr_log = Arc::new(Mutex::new(String::new()));
+let stderr_log_clone = stderr_log.clone();
+
+// Read stderr
+if let Some(stderr) = child.stderr.take() {
+    let app_handle = app.clone();
+    let final_path_clone = final_path.clone();
+    let expected_filename_clone = expected_filename.clone();
+
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr);
+        let mut buf = vec![0u8; 4096];
+        let mut pending = Vec::<u8>::new();
+
+        let progress_re = regex::Regex::new(r"\[download\]\s+(\d+\.?\d*)%\b").ok();
+        let tag_re = regex::Regex::new(r"^\[([^\]]+)\]").ok();
+
+        loop {
+            let n = match tokio::io::AsyncReadExt::read(&mut reader, &mut buf).await {
+                Ok(n) => n,
+                Err(_) => 0,
+            };
+            if n == 0 {
+                break;
+            }
+
+            pending.extend_from_slice(&buf[..n]);
+
+            while let Some(idx) = pending.iter().position(|b| *b == b'\r' || *b == b'\n') {
+                let mut segment = pending.drain(..=idx).collect::<Vec<u8>>();
+                if matches!(segment.last(), Some(b'\r') | Some(b'\n')) {
+                    segment.pop();
+                }
+
+                let err_str = String::from_utf8_lossy(&segment).trim().to_string();
                 if err_str.is_empty() {
                     continue;
                 }
-                
+
+                {
+                    let mut acc = stderr_log_clone.lock().await;
+                    if acc.len() < 16_384 {
+                        acc.push_str(&err_str);
+                        acc.push('\n');
+                    }
+                }
+
+                let mut progress_data = DownloadProgress {
+                    percent: None,
+                    size: None,
+                    speed: None,
+                    eta: None,
+                    status: None,
+                };
+
+                if let Some(ref re) = progress_re {
+                    if let Some(cap) = re.captures(&err_str) {
+                        progress_data.percent = cap.get(1).and_then(|m| m.as_str().parse::<f64>().ok());
+                    }
+                }
+
+                if let Some(idx) = err_str.find("Destination:") {
+                    let candidate = err_str[(idx + "Destination:".len())..].trim();
+                    let candidate = candidate.trim_matches('"').trim_matches('\'');
+                    if !candidate.is_empty() {
+                        let mut fp = final_path_clone.lock().await;
+                        *fp = candidate.to_string();
+                        let mut ef = expected_filename_clone.lock().await;
+                        *ef = Some(candidate.to_string());
+                        progress_data.status = Some("Creating output file...".to_string());
+                    }
+                }
+
+                if err_str.contains("Merging formats into") {
+                    if let Some(start) = err_str.find("Merging formats into") {
+                        let candidate = err_str[(start + "Merging formats into".len())..].trim();
+                        let candidate = candidate.trim_matches('"').trim_matches('\'');
+                        if !candidate.is_empty() {
+                            let mut fp = final_path_clone.lock().await;
+                            *fp = candidate.to_string();
+                            let mut ef = expected_filename_clone.lock().await;
+                            *ef = Some(candidate.to_string());
+                        }
+                    }
+                    progress_data.status = Some("Merging audio and video...".to_string());
+                } else if err_str.contains("Deleting original file") || err_str.contains("Deleting original files") {
+                    progress_data.status = Some("Cleaning up temporary files...".to_string());
+                } else if err_str.contains("Fixing video timestamp") {
+                    progress_data.status = Some("Finalizing media timestamps...".to_string());
+                }
+
+                if let Some(ref re) = tag_re {
+                    if let Some(cap) = re.captures(&err_str) {
+                        let tag = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+                        if tag == "Merger" {
+                            progress_data.status = Some("Merging audio and video...".to_string());
+                        } else if tag == "ExtractAudio" {
+                            progress_data.status = Some("Extracting audio...".to_string());
+                        } else if tag == "download" && progress_data.percent.is_none() {
+                            if err_str.contains("Destination:") {
+                                progress_data.status = Some("Creating output file...".to_string());
+                            }
+                        }
+                    }
+                }
+
+                if let Some(p) = progress_data.percent {
+                    if p >= 99.9 {
+                        progress_data.status.get_or_insert_with(|| "Finalizing download...".to_string());
+                    } else {
+                        progress_data.status.get_or_insert_with(|| "Downloading...".to_string());
+                    }
+                }
+
                 if err_str.contains("ERROR:") {
                     let _ = app_handle.emit("download-progress", DownloadProgress {
                         percent: None,
                         size: None,
                         speed: None,
                         eta: None,
-                        status: Some(format!("Error: {}", err_str.split("ERROR:").nth(1).map(|s| s.trim()).unwrap_or(err_str))),
+                        status: Some(format!(
+                            "Error: {}",
+                            err_str
+                                .split("ERROR:")
+                                .nth(1)
+                                .map(|s| s.trim())
+                                .unwrap_or(&err_str)
+                        )),
                     });
+                } else if progress_data.percent.is_some() || progress_data.status.is_some() {
+                    let _ = app_handle.emit("download-progress", &progress_data);
                 }
             }
-        });
-    }
-    
+        }
+    });
+}
+
     let status = child.wait().await.map_err(|e| format!("yt-dlp process error: {}", e))?;
     
     // Clear process reference
@@ -1838,9 +2428,50 @@ async fn download_video(app: tauri::AppHandle, url: String, options: DownloadOpt
     }
     
     if status.success() {
-        let _ = app.emit("download-complete", ());
+        let mut final_path_str = final_path.lock().await.clone();
+        
+        // If the path is just a folder (doesn't have a file extension), construct the file path
+        let path_buf = std::path::Path::new(&final_path_str);
+        if path_buf.is_dir() || !path_buf.extension().map(|e| !e.is_empty()).unwrap_or(false) {
+            // Try to construct the file path from what we know
+            let filename_base = file_name_for_path.as_ref()
+                .map(|f| f.replace(".", "_"))
+                .unwrap_or_else(|| "downloaded_file".to_string());
+            
+            let constructed_path = format!("{}/{}.{}", output_folder_for_path, filename_base, expected_ext);
+            
+            // Check if this file exists (it might with a different extension if yt-dlp chose differently)
+            if std::path::Path::new(&constructed_path).exists() {
+                final_path_str = constructed_path;
+            } else {
+                // Try to find any file in the output folder that matches our expected filename base
+                let folder_path = std::path::Path::new(&output_folder_for_path);
+                if let Ok(entries) = std::fs::read_dir(folder_path) {
+                    for entry in entries.flatten() {
+                        if let Ok(metadata) = entry.metadata() {
+                            if metadata.is_file() {
+                                if let Some(name) = entry.path().file_stem().and_then(|s| s.to_str()) {
+                                    if name == filename_base {
+                                        final_path_str = entry.path().to_string_lossy().to_string();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        let _ = app.emit("download-complete", serde_json::json!({ "outputPath": final_path_str }));
     } else {
-        let _ = app.emit("download-error", serde_json::json!({ "message": format!("Download failed with code {:?}", status.code()) }));
+        let stderr_text = stderr_log.lock().await.clone();
+        let message = if stderr_text.trim().is_empty() {
+            format!("Download failed with code {:?}", status.code())
+        } else {
+            format!("Download failed with code {:?}: {}", status.code(), stderr_text.trim())
+        };
+        let _ = app.emit("download-error", serde_json::json!({ "message": message }));
     }
     
     Ok(())
@@ -1889,10 +2520,16 @@ async fn cancel_download(app: tauri::AppHandle) -> Result<(), String> {
 async fn open_file(file_path: String) -> Result<(), String> {
     info!("open_file called for: {}", file_path);
     
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+    
     #[cfg(target_os = "windows")]
     {
-        new_command("cmd")
-            .args(&["/C", "start", "", &file_path])
+        use std::process::Command;
+        Command::new("explorer")
+            .arg(&file_path)
             .spawn()
             .map_err(|e| format!("Failed to open file: {}", e))?;
     }
@@ -1920,26 +2557,60 @@ async fn open_file(file_path: String) -> Result<(), String> {
 async fn open_folder(folder_path: String) -> Result<(), String> {
     info!("open_folder called for: {}", folder_path);
     
+    let path = std::path::Path::new(&folder_path);
+    
+    // Check if path exists
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", folder_path));
+    }
+    
+    // If it's a file, get the parent directory and select the file
+    // If it's a directory, just open the directory
+    let (dir_to_open, file_to_select) = if path.is_file() {
+        (path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| folder_path.clone()), Some(folder_path))
+    } else {
+        (folder_path, None)
+    };
+    
     #[cfg(target_os = "windows")]
     {
-        new_command("explorer")
-            .args(&["/select,", &folder_path])
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
+        use std::process::Command;
+        if let Some(file) = file_to_select {
+            // Open folder with file selected
+            Command::new("explorer")
+                .args(&["/select,", &file])
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
+        } else {
+            // Just open the folder
+            Command::new("explorer")
+                .arg(&dir_to_open)
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
+        }
     }
     
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .args(&["-R", &folder_path])
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
+        use std::process::Command;
+        if let Some(file) = file_to_select {
+            Command::new("open")
+                .args(&["-R", &file])
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
+        } else {
+            Command::new("open")
+                .arg(&dir_to_open)
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
+        }
     }
     
     #[cfg(target_os = "linux")]
     {
+        use std::process::Command;
         Command::new("xdg-open")
-            .arg(&folder_path)
+            .arg(&dir_to_open)
             .spawn()
             .map_err(|e| format!("Failed to open folder: {}", e))?;
     }
@@ -1998,7 +2669,7 @@ async fn open_external(url: String) -> Result<(), String> {
 // ============================================================================
 
 #[tauri::command]
-async fn convert_images_to_pdf(image_paths: Vec<String>, output_path: String, _quality: Option<u32>, upscale: Option<bool>) -> Result<String, String> {
+async fn convert_images_to_pdf(image_paths: Vec<String>, output_path: String, quality: Option<u32>, upscale: Option<bool>) -> Result<String, String> {
     info!("convert_images_to_pdf called with {} images", image_paths.len());
     
     if image_paths.is_empty() {
@@ -2007,18 +2678,14 @@ async fn convert_images_to_pdf(image_paths: Vec<String>, output_path: String, _q
     
     use printpdf::*;
     
-    let (doc, page1, layer1) = PdfDocument::new(
-        "output",
-        Mm(210.0),
-        Mm(297.0),
-        "Layer 1",
-    );
-    
-    let current_layer = doc.get_page(page1).get_layer(layer1);
-    
+    // Use 300 DPI for better quality PDF (standard print resolution)
+    // 1 inch = 25.4 mm = 300 pixels at 300 DPI
+    let dpi = 300.0_f32;
+    let mm_per_px = 25.4_f32 / dpi;
+
     // Get max dimensions if upscaling
-    let mut max_width = 0.0;
-    let mut max_height = 0.0;
+    let mut max_width = 0.0_f32;
+    let mut max_height = 0.0_f32;
     
     if upscale.unwrap_or(false) {
         for img_path in &image_paths {
@@ -2026,65 +2693,121 @@ async fn convert_images_to_pdf(image_paths: Vec<String>, output_path: String, _q
                 if let Ok(format) = reader.with_guessed_format() {
                     if let Ok(img) = format.decode() {
                         let (w, h) = img.dimensions();
-                        if w as f32 > max_width {
-                            max_width = w as f32;
-                        }
-                        if h as f32 > max_height {
-                            max_height = h as f32;
-                        }
+                        if w as f32 > max_width { max_width = w as f32; }
+                        if h as f32 > max_height { max_height = h as f32; }
                     }
                 }
             }
         }
-        
-        if max_width == 0.0 {
-            max_width = 612.0;
-        }
-        if max_height == 0.0 {
-            max_height = 792.0;
-        }
+        // Default to A4 size at 300 DPI if no images found
+        if max_width == 0.0 { max_width = 2480.0; } // ~210mm at 300 DPI
+        if max_height == 0.0 { max_height = 3508.0; } // ~297mm at 300 DPI
     }
     
-    for (index, img_path) in image_paths.iter().enumerate() {
-        let mut reader = ImageReader::open(img_path).map_err(|e| format!("Failed to open image: {}", e))?;
-        reader.set_format(ImageFormat::from_path(img_path).unwrap_or(ImageFormat::Jpeg));
-        let img = reader.decode().map_err(|e| format!("Failed to decode image: {}", e))?;
-        // Convert to RGB8
-        let rgb = img.into_rgb8();
-        let (w, h) = rgb.dimensions();
-        
-        let image_x_object = printpdf::ImageXObject {
-            width: printpdf::Px(w as usize),
-            height: printpdf::Px(h as usize),
+    // Helper to process image with quality - returns raw RGB data for printpdf
+    let process_image = |img: DynamicImage, q: Option<u32>| -> Result<(Vec<u8>, (u32, u32), Option<printpdf::ImageFilter>), String> {
+        let (w, h) = img.dimensions();
+        let jpeg_quality = q.unwrap_or(80).clamp(1, 100) as u8;
+
+        let mut jpeg_bytes = Vec::new();
+        let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, jpeg_quality);
+        let rgb_img = img.into_rgb8();
+        encoder
+            .encode(
+                rgb_img.as_raw(),
+                w,
+                h,
+                ExtendedColorType::Rgb8,
+            )
+            .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
+
+        Ok((jpeg_bytes, (w, h), Some(printpdf::ImageFilter::DCT)))
+    };
+
+    let first_img_path = &image_paths[0];
+    let mut reader = ImageReader::open(first_img_path).map_err(|e| format!("Failed to open first image: {}", e))?;
+    reader.set_format(ImageFormat::from_path(first_img_path).unwrap_or(ImageFormat::Jpeg));
+    let first_img = reader.decode().map_err(|e| format!("Failed to decode first image: {}", e))?;
+    let (_first_img_w, _first_img_h) = first_img.dimensions();
+    let (first_data, (f_w, f_h), first_filter) = process_image(first_img, quality)?;
+    
+    // Calculate page dimensions
+    let (page_w_px, page_h_px) = if upscale.unwrap_or(false) {
+        (max_width, max_height)
+    } else {
+        (f_w as f32, f_h as f32)
+    };
+
+    let (doc, page1, layer1) = PdfDocument::new(
+        "output",
+        Mm(page_w_px * mm_per_px),
+        Mm(page_h_px * mm_per_px),
+        "Layer 1",
+    );
+    
+    let current_layer = doc.get_page(page1).get_layer(layer1);
+    
+    let add_img_to_page = |layer: PdfLayerReference, data: Vec<u8>, filter: Option<printpdf::ImageFilter>, img_w: u32, img_h: u32, p_w: f32, p_h: f32| {
+        let x_object = printpdf::ImageXObject {
+            width: printpdf::Px(img_w as usize),
+            height: printpdf::Px(img_h as usize),
             color_space: printpdf::ColorSpace::Rgb,
             bits_per_component: printpdf::ColorBits::Bit8,
             interpolate: true,
-            image_data: rgb.into_raw(),
-            image_filter: None,
+            image_data: data,
+            image_filter: filter,
             clipping_bbox: None,
             smask: None,
         };
         
-        let image = printpdf::Image::from(image_x_object);
-
-        let page_width = if upscale.unwrap_or(false) { Mm((max_width as f32) / 3.527) } else { Mm((w as f32) / 3.527) };
-        let page_height = if upscale.unwrap_or(false) { Mm((max_height as f32) / 3.527) } else { Mm((h as f32) / 3.527) };
+        let image = printpdf::Image::from(x_object);
         
-        if index > 0 {
-            let (_new_page, new_layer) = doc.add_page(page_width, page_height, "Layer 1");
-            let _ = new_layer; // Use this layer
-        }
+        // Calculate scale to fill the page while maintaining aspect ratio
+        let scale_x = p_w / img_w as f32;
+        let scale_y = p_h / img_h as f32;
+        
+        // Use the larger scale to fill the page (crop if necessary)
+        // or smaller scale to fit entirely (letterbox)
+        // Current behavior: fit entirely (letterbox) - use min
+        // To fill page completely, use max instead
+        let scale = scale_x.min(scale_y);
+        
+        let final_w = img_w as f32 * scale;
+        let final_h = img_h as f32 * scale;
+        
+        // Center the image on the page
+        let translate_x = (p_w - final_w) / 2.0;
+        let translate_y = (p_h - final_h) / 2.0;
         
         let mut transform = printpdf::ImageTransform::default();
-        if upscale.unwrap_or(false) {
-            transform.scale_x = Some(max_width as f32 / w as f32);
-            transform.scale_y = Some(max_height as f32 / h as f32);
-        }
+        // printpdf expects scale factors, not absolute pixel sizes.
+        transform.scale_x = Some(scale);
+        transform.scale_y = Some(scale);
+        transform.translate_x = Some(Mm(translate_x * mm_per_px));
+        transform.translate_y = Some(Mm(translate_y * mm_per_px));
 
-        image.add_to_layer(
-            current_layer.clone(),
-            transform,
-        );
+        image.add_to_layer(layer, transform);
+    };
+
+    add_img_to_page(current_layer, first_data, first_filter, f_w, f_h, page_w_px, page_h_px);
+    
+    for i in 1..image_paths.len() {
+        let img_path = &image_paths[i];
+        if let Ok(mut r) = ImageReader::open(img_path) {
+            r.set_format(ImageFormat::from_path(img_path).unwrap_or(ImageFormat::Jpeg));
+            if let Ok(img) = r.decode() {
+                let (_img_w, _img_h) = img.dimensions();
+                let (data, (w, h), filter) = process_image(img, quality)?;
+                let (p_w, p_h) = if upscale.unwrap_or(false) {
+                    (max_width, max_height)
+                } else {
+                    (w as f32, h as f32)
+                };
+                
+                let (p, l) = doc.add_page(Mm(p_w * mm_per_px), Mm(p_h * mm_per_px), format!("Layer {}", i + 1));
+                add_img_to_page(doc.get_page(p).get_layer(l), data, filter, w, h, p_w, p_h);
+            }
+        }
     }
     
     let file = std::fs::File::create(&output_path).map_err(|e| format!("Failed to create PDF: {}", e))?;
@@ -2133,6 +2856,7 @@ pub fn run() {
             start_encode,
             extract_audio,
             trim_video,
+            video_to_gif,
             cancel_encode,
             // Media processing
             get_audio_waveform,

@@ -43,6 +43,7 @@ export let isCancelled = false;
 export let lastActiveViewId = null;
 export let isExtracting = false;
 export let isTrimming = false;
+export let isVideoToGifing = false;
 export let originalFileBitrate = 0;
 
 export function setEncodingState(encoding) {
@@ -63,6 +64,10 @@ export function setExtracting(extracting) {
 
 export function setTrimming(trimming) {
     isTrimming = trimming;
+}
+
+export function setVideoToGifing(converting) {
+    isVideoToGifing = converting;
 }
 
 export function setOriginalFileBitrate(bitrate) {

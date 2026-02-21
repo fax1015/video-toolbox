@@ -1,6 +1,6 @@
 // Video Encoder Module
 
-import { get, showPopup, showConfirm, showView, renderAudioTracks, renderSubtitleTracks, resetNav, animateAutoHeight } from './ui-utils.js';
+import { get, showPopup, showConfirm, showView, renderAudioTracks, renderSubtitleTracks, resetNav, toggleSidebar, animateAutoHeight } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue, updateQueueUI, formatPresetName } from './queue.js';
 import { BUILT_IN_PRESETS } from '../constants.js';
@@ -118,19 +118,19 @@ export function getOptionsFromUI() {
         preset: presetSelect ? presetSelect.value : 'medium',
         resolution: resolutionSelect ? resolutionSelect.value : 'source',
         fps: fpsSelect ? fpsSelect.value : 'source',
-        rateMode: rateMode,
+        rate_mode: rateMode,
         crf: crfSlider ? parseInt(crfSlider.value) : 23,
         bitrate: vBitrateInput ? vBitrateInput.value : '2500',
-        twoPass: twoPassCheckbox ? twoPassCheckbox.checked : false,
-        audioCodec: audioSelect ? audioSelect.value : 'aac',
-        audioBitrate: audioBitrateSelect ? audioBitrateSelect.value : '192k',
-        audioTracks: [...state.audioTracks],
-        subtitleTracks: [...state.subtitleTracks],
-        chaptersFile: state.chaptersFile,
-        outputSuffix: state.appSettings.outputSuffix,
-        outputFolder: outputFolderInput ? outputFolderInput.value : '',
-        customArgs: customFfmpegArgs ? customFfmpegArgs.value : '',
-        workPriority: state.appSettings.workPriority || 'normal',
+        two_pass: twoPassCheckbox ? twoPassCheckbox.checked : false,
+        audio_codec: audioSelect ? audioSelect.value : 'aac',
+        audio_bitrate: audioBitrateSelect ? audioBitrateSelect.value : '192k',
+        audio_tracks: [...state.audioTracks],
+        subtitle_tracks: [...state.subtitleTracks],
+        chapters_file: state.chaptersFile,
+        output_suffix: state.appSettings.outputSuffix,
+        output_folder: outputFolderInput ? outputFolderInput.value : '',
+        custom_args: customFfmpegArgs ? customFfmpegArgs.value : '',
+        work_priority: state.appSettings.workPriority || 'normal',
         threads: state.appSettings.cpuThreads || 0
     };
 }
@@ -165,8 +165,8 @@ export function applyOptionsToUI(options) {
     if (resolutionSelect) resolutionSelect.value = options.resolution || 'source';
     if (fpsSelect) fpsSelect.value = options.fps || 'source';
 
-    const rateMode = options.rateMode || 'crf';
-    const rateInput = document.querySelector(`input[name="rate-mode"][value="${rateMode}"]`);
+    const rate_mode = options.rate_mode || 'crf';
+    const rateInput = document.querySelector(`input[name="rate-mode"][value="${rate_mode}"]`);
     if (rateInput) {
         rateInput.checked = true;
         rateInput.dispatchEvent(new Event('change'));
@@ -178,17 +178,17 @@ export function applyOptionsToUI(options) {
     }
 
     if (vBitrateInput && options.bitrate) vBitrateInput.value = options.bitrate;
-    if (twoPassCheckbox) twoPassCheckbox.checked = !!options.twoPass;
+    if (twoPassCheckbox) twoPassCheckbox.checked = !!options.two_pass;
 
-    if (audioSelect && options.audioCodec) audioSelect.value = options.audioCodec;
-    if (audioBitrateSelect && options.audioBitrate) audioBitrateSelect.value = options.audioBitrate;
+    if (audioSelect && options.audio_codec) audioSelect.value = options.audio_codec;
+    if (audioBitrateSelect && options.audio_bitrate) audioBitrateSelect.value = options.audio_bitrate;
 
-    if (customFfmpegArgs) customFfmpegArgs.value = options.customArgs || '';
-    if (outputFolderInput) outputFolderInput.value = options.outputFolder || '';
+    if (customFfmpegArgs) customFfmpegArgs.value = options.custom_args || '';
+    if (outputFolderInput) outputFolderInput.value = options.output_folder || '';
 
-    state.setAudioTracks(options.audioTracks ? [...options.audioTracks] : []);
-    state.setSubtitleTracks(options.subtitleTracks ? [...options.subtitleTracks] : []);
-    state.setChaptersFile(options.chaptersFile || null);
+    state.setAudioTracks(options.audio_tracks ? [...options.audio_tracks] : []);
+    state.setSubtitleTracks(options.subtitle_tracks ? [...options.subtitle_tracks] : []);
+    state.setChaptersFile(options.chapters_file || null);
 
     renderAudioTracks(state.audioTracks);
     renderSubtitleTracks(state.subtitleTracks);
@@ -549,18 +549,18 @@ export async function handleFolderSelection(folderPath) {
                 preset: presetSelect ? presetSelect.value : 'medium',
                 resolution: resolutionSelect ? resolutionSelect.value : 'source',
                 fps: fpsSelect ? fpsSelect.value : 'source',
-                rateMode: rateMode,
+                rate_mode: rateMode,
                 crf: crfSlider ? parseInt(crfSlider.value) : 23,
                 bitrate: vBitrateInput ? vBitrateInput.value : '2500',
-                twoPass: twoPassCheckbox ? twoPassCheckbox.checked : false,
-                audioCodec: audioSelect ? audioSelect.value : 'aac',
-                audioBitrate: audioBitrateSelect ? audioBitrateSelect.value : '192k',
-                audioTracks: effectiveAudioTracks,
-                subtitleTracks: [...state.subtitleTracks],
-                chaptersFile: null,
-                outputSuffix: state.appSettings.outputSuffix,
-                outputFolder: outputFolderInput ? outputFolderInput.value : '',
-                customArgs: customFfmpegArgs ? customFfmpegArgs.value : ''
+                two_pass: twoPassCheckbox ? twoPassCheckbox.checked : false,
+                audio_codec: audioSelect ? audioSelect.value : 'aac',
+                audio_bitrate: audioBitrateSelect ? audioBitrateSelect.value : '192k',
+                audio_tracks: effectiveAudioTracks,
+                subtitle_tracks: [...state.subtitleTracks],
+                chapters_file: null,
+                output_suffix: state.appSettings.outputSuffix,
+                output_folder: outputFolderInput ? outputFolderInput.value : '',
+                custom_args: customFfmpegArgs ? customFfmpegArgs.value : ''
             };
             addToQueue(options);
         });
@@ -686,6 +686,7 @@ export function setupEncoderHandlers() {
             if (progressFilename) progressFilename.textContent = state.currentFilePath.split(/[\\/]/).pop();
 
             showView(progressView);
+            toggleSidebar(true);
             state.setEncodingState(true);
             state.setCancelled(false);
 

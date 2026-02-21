@@ -1,6 +1,6 @@
 // Video Trimmer Module
 
-import { get, showPopup, showView, updateTextContent } from './ui-utils.js';
+import { get, showPopup, showView, updateTextContent, toggleSidebar } from './ui-utils.js';
 import { resetNav } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue, updateQueueUI } from './queue.js';
@@ -52,10 +52,10 @@ export function formatDisplayTime(sec) {
 
 // Smart Seeker for smooth video scrubbing
 const smartSeeker = {
-    isSeeking: false,
     pendingTime: null,
     lastSeekTime: 0,
-    SEEK_DEBOUNCE_MS: 16,
+    SEEK_THROTTLE_MS: 30, // Optimized for responsive scrubbing (approx 30fps)
+    hideTimeout: null,
 
     seek: function (videoElement, time, force = false) {
         if (!videoElement) return;
@@ -66,53 +66,54 @@ const smartSeeker = {
         if (force) {
             this.pendingTime = null;
             this.lastSeekTime = now;
-            this.isSeeking = true;
             videoElement.currentTime = time;
             return;
         }
 
-        if (this.isSeeking) {
-            this.pendingTime = time;
-            return;
-        }
+        // Always store the newest time
+        this.pendingTime = time;
 
-        const timeSinceLastSeek = now - this.lastSeekTime;
-        if (timeSinceLastSeek < this.SEEK_DEBOUNCE_MS && this.pendingTime === null) {
-            this.pendingTime = time;
-            return;
+        // Throttle the actual video element seek
+        if (now - this.lastSeekTime > this.SEEK_THROTTLE_MS) {
+            this.performSeek(videoElement);
         }
+    },
 
-        this.lastSeekTime = now;
-        this.isSeeking = true;
+    performSeek: function (videoElement) {
+        if (this.pendingTime === null || !videoElement) return;
+
+        const time = this.pendingTime;
         this.pendingTime = null;
+        this.lastSeekTime = performance.now();
 
-        if (videoElement.fastSeek) {
-            videoElement.fastSeek(time);
-        } else {
-            videoElement.currentTime = time;
-        }
+        // Direct update is faster than waiting for sequential 'seeked' events 
+        // for local files in WebView2
+        videoElement.currentTime = time;
     },
 
     onSeeked: function (videoElement) {
-        this.isSeeking = false;
-
+        // If there's a pending time that hasn't been sought yet, do it now
         if (this.pendingTime !== null) {
-            const t = this.pendingTime;
-            this.pendingTime = null;
-            setTimeout(() => {
-                this.seek(videoElement, t);
-            }, 0);
+            this.performSeek(videoElement);
         } else {
-            requestAnimationFrame(() => this.hidePreview());
+            // Only hide the thumbnail after a brief delay of inactivity
+            // to prevent flashing between cached frames and video renders
+            if (this.hideTimeout) clearTimeout(this.hideTimeout);
+            this.hideTimeout = setTimeout(() => {
+                this.hidePreview();
+                this.hideTimeout = null;
+            }, 150);
         }
     },
 
-    reset: function () {
+    reset: function (newFilePath) {
         this.isSeeking = false;
         this.pendingTime = null;
         this.lastSeekTime = 0;
         this.hidePreview();
-        thumbnailCache.clear();
+        if (newFilePath !== state.trimFilePath) {
+            thumbnailCache.clear();
+        }
     },
 
     showPreview: function (time) {
@@ -193,19 +194,25 @@ const waveformOptions = {
 const waveformCache = new Map();
 let trimLoadingTimeout = null;
 let trimLoadingToken = 0;
-const TRIM_LOADING_MAX_MS = 6000;
+let filmstripData = null;
+function updateTrimLoadingStatus(status) {
+    const el = get('trim-loading-status');
+    if (el) el.textContent = status;
+}
 
-function startTrimLoading() {
+function startTrimLoading(initialStatus = 'Initializing...') {
     trimLoadingToken += 1;
     const token = trimLoadingToken;
     const trimLoading = get('trim-loading');
     const trimDashboard = get('trim-dashboard');
     if (trimLoading) trimLoading.classList.remove('hidden');
     if (trimDashboard) trimDashboard.classList.add('trim-loading-active');
+    updateTrimLoadingStatus(initialStatus);
+
     if (trimLoadingTimeout) clearTimeout(trimLoadingTimeout);
     trimLoadingTimeout = setTimeout(() => {
         endTrimLoading(token);
-    }, TRIM_LOADING_MAX_MS);
+    }, 45000); // Increased for very large files
     return token;
 }
 
@@ -401,17 +408,28 @@ async function resolveBitrateKbps(filePath, metadata) {
 function updateTrimTimelineVisual() {
     const trimInactiveStart = get('trim-inactive-start');
     const trimInactiveEnd = get('trim-inactive-end');
-    const trimRangeHandles = get('trim-range-handles');
+    const trimActiveSegment = get('trim-active-segment');
+    const trimHandleLeft = get('trim-handle-left');
+    const trimHandleRight = get('trim-handle-right');
 
-    if (!state.trimDurationSeconds || !trimInactiveStart || !trimInactiveEnd || !trimRangeHandles) return;
+    if (!state.trimDurationSeconds || !trimInactiveStart || !trimInactiveEnd || !trimActiveSegment || !trimHandleLeft || !trimHandleRight) return;
 
     const startPct = (state.trimStartSeconds / state.trimDurationSeconds) * 100;
     const endPct = (state.trimEndSeconds / state.trimDurationSeconds) * 100;
     const activePct = endPct - startPct;
 
+    trimInactiveStart.style.left = '0';
     trimInactiveStart.style.width = startPct + '%';
-    trimRangeHandles.style.width = activePct + '%';
+
+    trimActiveSegment.style.left = startPct + '%';
+    trimActiveSegment.style.width = activePct + '%';
+
+    trimInactiveEnd.style.left = endPct + '%';
     trimInactiveEnd.style.width = (100 - endPct) + '%';
+
+    // Snap handles: right side of left handle to left of active, left side of right handle to right of active
+    trimHandleLeft.style.left = `calc(${startPct}% - 14px)`;
+    trimHandleRight.style.left = endPct + '%';
 }
 
 function syncTrimInputsFromVisual() {
@@ -445,10 +463,12 @@ export async function loadTrimQueueItem(item) {
         state.setOriginalFileBitrate(savedBitrate);
     }
 
-    const startSeconds = Math.max(0, item.options.startSeconds ?? 0);
+    // Note: use snake_case for fields
+    const startSeconds = Math.max(0, (item.options.start_seconds ?? item.options.startSeconds) ?? 0);
+    const end = item.options.end_seconds ?? item.options.endSeconds;
     const endSeconds = Math.min(
         state.trimDurationSeconds || startSeconds,
-        Math.max(startSeconds + 1, item.options.endSeconds ?? state.trimDurationSeconds)
+        Math.max(startSeconds + 1, end ?? state.trimDurationSeconds)
     );
 
     state.setTrimTime(state.trimDurationSeconds, startSeconds, endSeconds);
@@ -513,7 +533,7 @@ export async function handleTrimFileSelection(filePath) {
     // Preserve bitrate if same file is being reloaded
     const previousBitrate = (filePath === state.trimFilePath) ? state.originalFileBitrate : 0;
 
-    smartSeeker.reset();
+    smartSeeker.reset(filePath);
     state.setTrimFilePath(filePath);
 
     const name = filePath.split(/[\\\\/]/).pop();
@@ -560,26 +580,27 @@ export async function handleTrimFileSelection(filePath) {
         trimVideoPreview.onloadeddata = function () {
             if (window.api?.logInfo) window.api.logInfo('Video preview loaded successfully, duration:', trimVideoPreview.duration); else console.log('Video preview loaded successfully, duration:', trimVideoPreview.duration);
         };
-
-        // Try to load the video
         trimVideoPreview.load();
     }
     if (videoCurrentTime) videoCurrentTime.textContent = '00:00';
     if (trimPlayhead) trimPlayhead.style.left = '0%';
 
     try {
+        updateTrimLoadingStatus('Analyzing metadata...');
         const metadata = await window.api.getMetadata(filePath);
         const duration = metadata.durationSeconds || 0;
         state.setTrimTime(duration, 0, duration);
 
-        // Use metadata bitrate, or a more reliable ffprobe fallback if needed
         const resolvedBitrate = await resolveBitrateKbps(filePath, metadata);
         state.setOriginalFileBitrate(resolvedBitrate || previousBitrate);
 
         if (trimFileDuration) trimFileDuration.textContent = metadata.duration;
 
         if (videoPreviewContainer && metadata.width && metadata.height) {
-            videoPreviewContainer.style.aspectRatio = `${metadata.width} / ${metadata.height}`;
+            const ratio = `${metadata.width} / ${metadata.height}`;
+            videoPreviewContainer.style.aspectRatio = ratio;
+            const scrubPreview = get('scrub-preview');
+            if (scrubPreview) scrubPreview.style.aspectRatio = ratio;
         }
 
         if (trimStartInput) trimStartInput.value = '00:00:00';
@@ -588,45 +609,74 @@ export async function handleTrimFileSelection(filePath) {
         updateTrimTimelineVisual();
         syncTrimInputsFromVisual();
 
-        await loadTrimWaveform(filePath);
+        const waitForIndexing = state.appSettings.waitForIndexing !== false;
+
+        if (!waitForIndexing || duration <= 0) {
+            // Speed mode: unlock UI immediately and let things load in the background
+            endTrimLoading(loadingToken);
+
+            // Still run the tasks but don't await them for the loading screen
+            loadTrimWaveform(filePath);
+            if (duration > 0) {
+                window.api.getVideoThumbnails({
+                    filePath,
+                    duration,
+                    count: 150
+                }).then(data => {
+                    if (data && state.trimFilePath === filePath) {
+                        thumbnailCache.set(filePath, data);
+                        filmstripData = data;
+                        const scrubPreview = get('scrub-preview');
+                        if (scrubPreview) {
+                            scrubPreview.style.backgroundImage = `url(data:image/jpeg;base64,${data.data})`;
+                            scrubPreview.style.backgroundRepeat = 'no-repeat';
+                        }
+                    }
+                }).catch(e => {
+                    if (window.api?.logError) window.api.logError('Background thumbnail failed:', e);
+                });
+            }
+        } else {
+            // Smooth mode: Wait for everything to be ready
+            updateTrimLoadingStatus('Generating indexing data...');
+            await Promise.allSettled([
+                (async () => {
+                    updateTrimLoadingStatus('Generating audio peaks...');
+                    await loadTrimWaveform(filePath);
+                })(),
+                (async () => {
+                    if (duration > 0) {
+                        updateTrimLoadingStatus('Capturing video frames...');
+                        try {
+                            const data = await window.api.getVideoThumbnails({
+                                filePath,
+                                duration,
+                                count: 150
+                            });
+                            if (data && state.trimFilePath === filePath) {
+                                thumbnailCache.set(filePath, data);
+                                filmstripData = data;
+                                const scrubPreview = get('scrub-preview');
+                                if (scrubPreview) {
+                                    scrubPreview.style.backgroundImage = `url(data:image/jpeg;base64,${data.data})`;
+                                    scrubPreview.style.backgroundRepeat = 'no-repeat';
+                                }
+                            }
+                        } catch (e) {
+                            if (window.api?.logError) window.api.logError('Thumbnail generation failed:', e);
+                        }
+                    }
+                })()
+            ]);
+            endTrimLoading(loadingToken);
+        }
+
         preloadTrimWaveforms(filePath);
     } catch (e) {
         if (window.api?.logError) window.api.logError('Failed to load trim file:', e); else console.error('Failed to load trim file:', e);
         if (trimFileDuration) trimFileDuration.textContent = 'Unknown';
         state.setTrimTime(0, 0, 0);
-        // Update estimated file size to show error state when metadata fails
-        if (estimatedFileSizeEl) {
-            estimatedFileSizeEl.textContent = 'N/A';
-        }
-        endTrimLoading(loadingToken);
-    }
-
-    // Generate thumbnails
-    if (state.trimDurationSeconds > 0) {
-        window.api.getVideoThumbnails({
-            filePath,
-            duration: state.trimDurationSeconds,
-            count: 150
-        }).then(data => {
-            if (data && state.trimFilePath === filePath) {
-                if (window.api?.logInfo) window.api.logInfo('Thumbnails loaded:', data.count, 'frames'); else console.log('Thumbnails loaded:', data.count, 'frames');
-                thumbnailCache.set(filePath, data);
-                filmstripData = data;
-
-                const scrubPreview = get('scrub-preview');
-                if (scrubPreview) {
-                    scrubPreview.style.backgroundImage = `url(data:image/jpeg;base64,${data.data})`;
-                    scrubPreview.style.backgroundSize = `auto 100%`;
-                    scrubPreview.style.backgroundRepeat = 'no-repeat';
-                }
-            }
-            endTrimLoading(loadingToken);
-        }).catch(e => {
-            if (window.api?.logError) window.api.logError('Thumbnail generation failed:', e); else console.error('Thumbnail generation failed:', e);
-            thumbnailCache.clear();
-            endTrimLoading(loadingToken);
-        });
-    } else {
+        if (estimatedFileSizeEl) estimatedFileSizeEl.textContent = 'N/A';
         endTrimLoading(loadingToken);
     }
 }
@@ -659,21 +709,19 @@ export function setupTrimmerHandlers() {
             trimDropZone.classList.remove('drag-over');
             const file = e.dataTransfer.files[0];
             if (file) {
-                handleTrimFileSelection(file.path).then(() => {
-                    showView(get('trim-dashboard'));
-                    resetNav();
-                    if (navTrim) navTrim.classList.add('active');
-                });
+                showView(get('trim-dashboard'));
+                resetNav();
+                if (navTrim) navTrim.classList.add('active');
+                handleTrimFileSelection(file.path);
             }
         });
         trimDropZone.addEventListener('click', async () => {
             const path = await window.api.selectFile();
             if (path) {
-                handleTrimFileSelection(path).then(() => {
-                    showView(get('trim-dashboard'));
-                    resetNav();
-                    if (navTrim) navTrim.classList.add('active');
-                });
+                showView(get('trim-dashboard'));
+                resetNav();
+                if (navTrim) navTrim.classList.add('active');
+                handleTrimFileSelection(path);
             }
         });
     }
@@ -706,8 +754,8 @@ export function setupTrimmerHandlers() {
 
     if (trimStartInput) {
         trimStartInput.addEventListener('change', () => {
-            const newStart = Math.max(0, Math.min(state.trimEndSeconds - 1, timeStringToSeconds(trimStartInput.value)));
-            const newEnd = Math.max(newStart + 1, state.trimEndSeconds);
+            const newStart = Math.max(0, Math.min(state.trimEndSeconds - 0.01, timeStringToSeconds(trimStartInput.value)));
+            const newEnd = Math.max(newStart + 0.01, state.trimEndSeconds);
             state.setTrimTime(state.trimDurationSeconds, newStart, newEnd);
             syncTrimInputsFromVisual();
         });
@@ -715,8 +763,8 @@ export function setupTrimmerHandlers() {
 
     if (trimEndInput) {
         trimEndInput.addEventListener('change', () => {
-            const newEnd = Math.min(state.trimDurationSeconds, Math.max(state.trimStartSeconds + 1, timeStringToSeconds(trimEndInput.value)));
-            const newStart = Math.min(state.trimStartSeconds, newEnd - 1);
+            const newEnd = Math.min(state.trimDurationSeconds, Math.max(state.trimStartSeconds + 0.01, timeStringToSeconds(trimEndInput.value)));
+            const newStart = Math.min(state.trimStartSeconds, newEnd - 0.01);
             state.setTrimTime(state.trimDurationSeconds, newStart, newEnd);
             syncTrimInputsFromVisual();
         });
@@ -725,24 +773,24 @@ export function setupTrimmerHandlers() {
     if (trimAddQueueBtn) {
         trimAddQueueBtn.addEventListener('click', () => {
             if (!state.trimFilePath || !state.trimDurationSeconds) return;
-            if (state.trimDurationSeconds < 1) {
+            if (state.trimDurationSeconds < 0.01) {
                 showPopup('Video is too short to trim.');
                 return;
             }
 
             const inputStart = trimStartInput ? timeStringToSeconds(trimStartInput.value) : state.trimStartSeconds;
             const inputEnd = trimEndInput ? timeStringToSeconds(trimEndInput.value) : state.trimEndSeconds;
-            const clampedStart = Math.max(0, Math.min(inputEnd - 1, inputStart));
-            const clampedEnd = Math.min(state.trimDurationSeconds, Math.max(clampedStart + 1, inputEnd));
+            const clampedStart = Math.max(0, Math.min(inputEnd - 0.01, inputStart));
+            const clampedEnd = Math.min(state.trimDurationSeconds, Math.max(clampedStart + 0.01, inputEnd));
             state.setTrimTime(state.trimDurationSeconds, clampedStart, clampedEnd);
             syncTrimInputsFromVisual();
 
             const outputFolderInput = get('output-folder');
             const options = {
                 input: state.trimFilePath,
-                startSeconds: state.trimStartSeconds,
-                endSeconds: state.trimEndSeconds,
-                outputFolder: outputFolderInput ? outputFolderInput.value : '',
+                start_seconds: state.trimStartSeconds,
+                end_seconds: state.trimEndSeconds,
+                output_folder: outputFolderInput ? outputFolderInput.value : '',
                 originalFileBitrate: state.originalFileBitrate || 0
             };
 
@@ -775,7 +823,7 @@ export function setupTrimmerHandlers() {
     if (trimVideoBtn) {
         trimVideoBtn.addEventListener('click', () => {
             if (!state.trimFilePath || !state.trimDurationSeconds) return;
-            if (state.trimDurationSeconds < 1) {
+            if (state.trimDurationSeconds < 0.01) {
                 alert('Video is too short to trim.');
                 return;
             }
@@ -790,14 +838,22 @@ export function setupTrimmerHandlers() {
             if (progressFilename) progressFilename.textContent = state.trimFilePath.split(/[\\/]/).pop();
 
             showView(progressView);
+            toggleSidebar(true);
             state.setLastActiveViewId('trimDropZone');
 
             window.api.trimVideo({
                 input: state.trimFilePath,
-                startSeconds: state.trimStartSeconds,
-                endSeconds: state.trimEndSeconds,
-                outputFolder: outputFolderInput ? outputFolderInput.value : '',
-                workPriority: state.appSettings.workPriority || 'normal'
+                start_seconds: state.trimStartSeconds,
+                end_seconds: state.trimEndSeconds,
+                output_folder: outputFolderInput ? outputFolderInput.value : '',
+                work_priority: state.appSettings.workPriority || 'normal'
+            }).catch(e => {
+                if (window.api?.logError) window.api.logError('Trim video error:', e); else console.error('Trim video error:', e);
+                state.setEncodingState(false);
+                state.setTrimming(false);
+                const progressView = get('progress-view');
+                if (progressView) progressView.classList.add('hidden');
+                showPopup(`Error starting trim: ${e}`);
             });
         });
     }
@@ -814,7 +870,7 @@ export function setupTrimmerHandlers() {
 }
 
 function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline, playhead, videoPreview) {
-    const trimTrack = get('trim-track');
+    const trimTrackInner = get('trim-track-inner');
     const videoCurrentTime = get('video-current-time');
     // Use module-level variables instead of redeclaring (fixes scope bug)
     isDraggingPlayhead = false;
@@ -826,15 +882,15 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
     const upEvent = supportsPointer ? 'pointerup' : 'mouseup';
 
     function trimTrackXToSeconds(clientX) {
-        if (!trimTrack || !state.trimDurationSeconds) return 0;
-        const rect = trimTrack.getBoundingClientRect();
+        if (!trimTrackInner || !state.trimDurationSeconds) return 0;
+        const rect = trimTrackInner.getBoundingClientRect();
         const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         return x * state.trimDurationSeconds;
     }
 
     function getTimelineTime(clientX) {
-        if (!timeline || !state.trimDurationSeconds) return 0;
-        const rect = timeline.getBoundingClientRect();
+        if (!trimTrackInner || !state.trimDurationSeconds) return 0;
+        const rect = trimTrackInner.getBoundingClientRect();
         let pct = (clientX - rect.left) / rect.width;
         pct = Math.max(0, Math.min(1, pct));
         return pct * state.trimDurationSeconds;
@@ -846,19 +902,19 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
     }
 
     function onTrimDragMove(e) {
-        if (!trimDragging || !state.trimDurationSeconds || !trimTrack) return;
+        if (!trimDragging || !state.trimDurationSeconds || !trimTrackInner) return;
         const sec = trimTrackXToSeconds(e.clientX);
         let newStart = state.trimStartSeconds;
         let newEnd = state.trimEndSeconds;
 
         if (trimDragging === 'start') {
-            newStart = Math.max(0, Math.min(state.trimEndSeconds - 1, sec));
-            newEnd = Math.max(newStart + 1, state.trimEndSeconds);
+            newStart = Math.max(0, Math.min(state.trimEndSeconds - 0.01, sec));
+            newEnd = Math.max(newStart + 0.01, state.trimEndSeconds);
         } else if (trimDragging === 'end') {
-            newEnd = Math.min(state.trimDurationSeconds, Math.max(state.trimStartSeconds + 1, sec));
-            newStart = Math.min(state.trimStartSeconds, newEnd - 1);
+            newEnd = Math.min(state.trimDurationSeconds, Math.max(state.trimStartSeconds + 0.01, sec));
+            newStart = Math.min(state.trimStartSeconds, newEnd - 0.01);
         } else if (trimDragging === 'range') {
-            const delta = (e.clientX - trimDragStartX) / trimTrack.getBoundingClientRect().width * state.trimDurationSeconds;
+            const delta = (e.clientX - trimDragStartX) / trimTrackInner.getBoundingClientRect().width * state.trimDurationSeconds;
             newStart = trimDragInitialStart + delta;
             newEnd = trimDragInitialEnd + delta;
             if (newStart < 0) {
@@ -870,7 +926,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                 newEnd = state.trimDurationSeconds;
             }
             newStart = Math.max(0, newStart);
-            newEnd = Math.min(state.trimDurationSeconds, Math.max(newStart + 1, newEnd));
+            newEnd = Math.min(state.trimDurationSeconds, Math.max(newStart + 0.01, newEnd));
         }
 
         state.setTrimTime(state.trimDurationSeconds, newStart, newEnd);
@@ -952,6 +1008,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                 }
             }
             trimDragging = 'start';
+            videoPreview.pause();
             document.addEventListener(moveEvent, onTrimDragMove);
             document.addEventListener(upEvent, onTrimDragEnd);
         });
@@ -969,6 +1026,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
                 }
             }
             trimDragging = 'end';
+            videoPreview.pause();
             document.addEventListener(moveEvent, onTrimDragMove);
             document.addEventListener(upEvent, onTrimDragEnd);
         });
@@ -989,6 +1047,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
             trimDragStartX = e.clientX;
             trimDragInitialStart = state.trimStartSeconds;
             trimDragInitialEnd = state.trimEndSeconds;
+            videoPreview.pause();
             document.addEventListener(moveEvent, onTrimDragMove);
             document.addEventListener(upEvent, onTrimDragEnd);
         });
@@ -998,6 +1057,7 @@ function setupTrimDragHandlers(handleLeft, handleRight, activeSegment, timeline,
             if (e.target.closest('.trim-handle') || e.target.closest('.trim-active-segment') || e.target.closest('.trim-waveform-toolbar')) return;
             e.preventDefault();
             isDraggingPlayhead = true;
+            videoPreview.pause();
             const time = getTimelineTime(e.clientX);
             if (isFinite(time)) {
                 if (playhead && state.trimDurationSeconds) {
@@ -1027,6 +1087,26 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
     const playIconShape = get('play-icon-shape');
     const pauseIconShape = get('pause-icon-shape');
     let lastVolume = 1;
+    let playbackRaf = null;
+
+    function startPlaybackLoop() {
+        if (playbackRaf) return;
+        const loop = () => {
+            updatePlayhead();
+            updateCurrentTime();
+            playbackRaf = requestAnimationFrame(loop);
+        };
+        playbackRaf = requestAnimationFrame(loop);
+    }
+
+    function stopPlaybackLoop() {
+        if (playbackRaf) {
+            cancelAnimationFrame(playbackRaf);
+            playbackRaf = null;
+        }
+        updatePlayhead();
+        updateCurrentTime();
+    }
 
     function showPlayPauseAnimation(isPlaying) {
         if (!videoOverlay || !playIconShape || !pauseIconShape) return;
@@ -1130,20 +1210,32 @@ function setupVideoPreviewHandlers(videoPreview, container, muteBtn, volumeSlide
     }
 
     if (videoPreview) {
-        videoPreview.addEventListener('play', () => updatePlayBtn());
-        videoPreview.addEventListener('pause', () => updatePlayBtn());
+        videoPreview.addEventListener('play', () => {
+            updatePlayBtn();
+            startPlaybackLoop();
+        });
+        videoPreview.addEventListener('pause', () => {
+            updatePlayBtn();
+            stopPlaybackLoop();
+        });
         videoPreview.addEventListener('timeupdate', () => {
-            updatePlayhead();
-            updateCurrentTime();
+            // Primarily for when paused but seeked
+            if (videoPreview.paused) {
+                updatePlayhead();
+                updateCurrentTime();
+            }
         });
         videoPreview.addEventListener('seeked', () => {
             smartSeeker.onSeeked(videoPreview);
             updateCurrentTime();
+            updatePlayhead();
         });
         videoPreview.addEventListener('ended', () => {
+            stopPlaybackLoop();
             videoPreview.currentTime = state.trimStartSeconds;
             updatePlayhead();
             updateCurrentTime();
+            updatePlayBtn();
         });
     }
 

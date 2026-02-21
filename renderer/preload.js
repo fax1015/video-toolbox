@@ -4,8 +4,8 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-// Track event listeners for cleanup
-const eventListeners = {
+// Track event listeners for cleanup and callback management
+const eventCallbacks = {
     'encode-progress': [],
     'encode-complete': [],
     'encode-error': [],
@@ -15,6 +15,37 @@ const eventListeners = {
     'download-error': [],
     'download-cancelled': []
 };
+
+const unlistenFns = {};
+
+// Pre-register all event listeners immediately to avoid race conditions
+// This ensures listeners are active before any encoding/download starts
+async function initializeEventListeners() {
+    const eventNames = Object.keys(eventCallbacks);
+
+    for (const eventName of eventNames) {
+        try {
+            const unlisten = await listen(eventName, (event) => {
+                // Call all registered callbacks for this event
+                const callbacks = eventCallbacks[eventName] || [];
+                callbacks.forEach(callback => {
+                    try {
+                        // For 'cancelled' events, payload might be undefined
+                        callback(event.payload);
+                    } catch (err) {
+                        console.error(`Error in callback for ${eventName}:`, err);
+                    }
+                });
+            });
+            unlistenFns[eventName] = unlisten;
+        } catch (err) {
+            console.error(`Failed to register listener for ${eventName}:`, err);
+        }
+    }
+}
+
+// Start initializing listeners immediately
+const initPromise = initializeEventListeners();
 
 // Expose Tauri APIs to the renderer
 window.api = {
@@ -35,9 +66,22 @@ window.api = {
     getMetadataFull: (filePath) => invoke('get_metadata_full', { filePath }),
     getImageInfo: (filePath) => invoke('get_image_info', { filePath }),
     saveMetadata: (options) => invoke('save_metadata', { filePath: options.filePath, metadata: options.metadata }),
-    startEncode: (options) => invoke('start_encode', options),
-    extractAudio: (options) => invoke('extract_audio', options),
-    trimVideo: (options) => invoke('trim_video', options),
+    startEncode: async (options) => {
+        await initPromise; // Ensure listeners are ready before starting
+        return invoke('start_encode', { options });
+    },
+    extractAudio: async (options) => {
+        await initPromise;
+        return invoke('extract_audio', { options });
+    },
+    trimVideo: async (options) => {
+        await initPromise;
+        return invoke('trim_video', { options });
+    },
+    videoToGif: async (options) => {
+        await initPromise;
+        return invoke('video_to_gif', { options });
+    },
     cancelEncode: () => invoke('cancel_encode'),
 
     // ==================== Media Analysis APIs ====================
@@ -57,7 +101,10 @@ window.api = {
 
     // ==================== Download APIs ====================
     getVideoInfo: (url, options) => invoke('get_video_info', { url, disableFlatPlaylist: options?.disableFlatPlaylist }),
-    downloadVideo: (options) => invoke('download_video', { url: options.url, options }),
+    downloadVideo: async (options) => {
+        await initPromise;
+        return invoke('download_video', { url: options.url, options });
+    },
     cancelDownload: () => invoke('cancel_download'),
 
     // ==================== Shell APIs ====================
@@ -87,78 +134,66 @@ window.api = {
     }),
 
     // ==================== Event APIs ====================
-    // Encode events
+    // Encode events - callbacks are stored and called when events arrive
     onProgress: (callback) => {
-        const handler = (event) => callback(event.payload);
-        listen('encode-progress', handler).then((unlisten) => {
-            eventListeners['encode-progress'].push(unlisten);
-        });
-        return handler;
+        eventCallbacks['encode-progress'].push(callback);
+        return callback;
     },
     onComplete: (callback) => {
-        const handler = (event) => callback(event.payload);
-        listen('encode-complete', handler).then((unlisten) => {
-            eventListeners['encode-complete'].push(unlisten);
-        });
-        return handler;
+        eventCallbacks['encode-complete'].push(callback);
+        return callback;
     },
     onError: (callback) => {
-        const handler = (event) => callback(event.payload);
-        listen('encode-error', handler).then((unlisten) => {
-            eventListeners['encode-error'].push(unlisten);
-        });
-        return handler;
+        eventCallbacks['encode-error'].push(callback);
+        return callback;
     },
     onCancelled: (callback) => {
-        const handler = () => callback();
-        listen('encode-cancelled', handler).then((unlisten) => {
-            eventListeners['encode-cancelled'].push(unlisten);
-        });
-        return handler;
+        eventCallbacks['encode-cancelled'].push(callback);
+        return callback;
     },
 
     // Download events
     onDownloadProgress: (callback) => {
-        const handler = (event) => callback(event.payload);
-        listen('download-progress', handler).then((unlisten) => {
-            eventListeners['download-progress'].push(unlisten);
-        });
-        return handler;
+        eventCallbacks['download-progress'].push(callback);
+        return callback;
     },
     onDownloadComplete: (callback) => {
-        const handler = () => callback();
-        listen('download-complete', handler).then((unlisten) => {
-            eventListeners['download-complete'].push(unlisten);
-        });
-        return handler;
+        eventCallbacks['download-complete'].push(callback);
+        return callback;
     },
     onDownloadError: (callback) => {
-        const handler = (event) => callback(event.payload);
-        listen('download-error', handler).then((unlisten) => {
-            eventListeners['download-error'].push(unlisten);
-        });
-        return handler;
+        eventCallbacks['download-error'].push(callback);
+        return callback;
     },
 
     // ==================== Utility APIs ====================
     logInfo: (...args) => {
-        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        const msg = args.map(a => {
+            if (a instanceof Error) return `${a.name}: ${a.message}\n${a.stack}`;
+            return typeof a === 'object' ? JSON.stringify(a) : String(a);
+        }).join(' ');
         invoke('frontend_log', { level: 'info', message: msg }).catch(() => { });
     },
     logWarn: (...args) => {
-        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        const msg = args.map(a => {
+            if (a instanceof Error) return `${a.name}: ${a.message}\n${a.stack}`;
+            return typeof a === 'object' ? JSON.stringify(a) : String(a);
+        }).join(' ');
         invoke('frontend_log', { level: 'warn', message: msg }).catch(() => { });
     },
     logError: (...args) => {
-        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        const msg = args.map(a => {
+            if (a instanceof Error) return `${a.name}: ${a.message}\n${a.stack}`;
+            return typeof a === 'object' ? JSON.stringify(a) : String(a);
+        }).join(' ');
         invoke('frontend_log', { level: 'error', message: msg }).catch(() => { });
     },
     // Remove event listener (for cleanup)
     removeListener: (eventName, handler) => {
-        if (eventListeners[eventName]) {
-            const index = eventListeners[eventName].indexOf(handler);
+        if (eventCallbacks[eventName]) {
+            const index = eventCallbacks[eventName].indexOf(handler);
             if (index > -1) {
-                eventListeners[eventName].splice(index, 1);
+                eventCallbacks[eventName].splice(index, 1);
             }
         }
     }

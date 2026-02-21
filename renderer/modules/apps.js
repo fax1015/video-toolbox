@@ -5,12 +5,15 @@ import * as state from './state.js';
 import { TOOL_REGISTRY, APP_SETTINGS_KEY } from '../constants.js';
 import { clearImages } from './image-to-pdf.js';
 
+const SIDEBAR_REORDER_HOLD_MS = 1000;
+
 export function setupAppsHandlers() {
     const appsDashboard = get('apps-dashboard');
     const navApps = get('nav-apps');
 
     syncToolIcons();
     renderSidebarApps();
+    setupSidebarReorder();
     renderAppsGrid();
 
     if (navApps) {
@@ -24,6 +27,140 @@ export function setupAppsHandlers() {
             showView(appsDashboard);
         });
     }
+}
+
+function setupSidebarReorder() {
+    const container = document.querySelector('.sidebar-nav-scroll');
+    if (!container || container.dataset.reorderBound === 'true') return;
+
+    let holdTimer = null;
+    let isReorderMode = false;
+    let hasReordered = false;
+    let draggedToolId = null;
+    let shouldSuppressNextClick = false;
+
+    const clearHoldTimer = () => {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+    };
+
+    const getNavButton = (target) => target?.closest('.nav-item[data-tool-id]');
+
+    const savePinnedOrderFromDom = () => {
+        const currentPinned = new Set(state.appSettings.pinnedApps || []);
+        const orderedPinned = Array.from(container.querySelectorAll('.nav-item[data-tool-id]'))
+            .map((el) => el.dataset.toolId)
+            .filter((id) => id && currentPinned.has(id));
+
+        const missingPinned = (state.appSettings.pinnedApps || []).filter((id) => !orderedPinned.includes(id));
+        state.appSettings.pinnedApps = [...orderedPinned, ...missingPinned];
+        localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(state.appSettings));
+    };
+
+    const resetReorderState = () => {
+        shouldSuppressNextClick = hasReordered;
+        clearHoldTimer();
+        container.classList.remove('reorder-mode');
+        container.querySelectorAll('.nav-item.reorder-active').forEach((el) => el.classList.remove('reorder-active'));
+        container.querySelectorAll('.nav-item').forEach((el) => {
+            el.style.transform = '';
+            el.style.transition = '';
+        });
+
+        if (isReorderMode && hasReordered) {
+            savePinnedOrderFromDom();
+            renderAppsGrid();
+            document.dispatchEvent(new CustomEvent('sidebar-tools-reordered'));
+        }
+
+        isReorderMode = false;
+        hasReordered = false;
+        draggedToolId = null;
+    };
+
+    container.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+
+        const navBtn = getNavButton(event.target);
+        if (!navBtn || navBtn.classList.contains('hidden')) return;
+
+        clearHoldTimer();
+        holdTimer = setTimeout(() => {
+            const liveBtn = container.querySelector(`#${navBtn.id}`);
+            if (!liveBtn) return;
+
+            isReorderMode = true;
+            draggedToolId = liveBtn.dataset.toolId;
+            container.classList.add('reorder-mode');
+            liveBtn.classList.add('reorder-active');
+        }, SIDEBAR_REORDER_HOLD_MS);
+    });
+
+    container.addEventListener('pointerover', (event) => {
+        if (!isReorderMode || !draggedToolId) return;
+
+        const targetBtn = getNavButton(event.target);
+        if (!targetBtn || targetBtn.dataset.toolId === draggedToolId) return;
+
+        const draggedBtn = container.querySelector(`.nav-item[data-tool-id="${draggedToolId}"]`);
+        if (!draggedBtn) return;
+
+        const items = Array.from(container.querySelectorAll('.nav-item'));
+        const rects = new Map(items.map(item => [item, item.getBoundingClientRect()]));
+
+        const rect = targetBtn.getBoundingClientRect();
+        const insertAfter = event.clientY > rect.top + (rect.height / 2);
+
+        let didMove = false;
+        if (insertAfter) {
+            if (targetBtn.nextSibling !== draggedBtn) {
+                container.insertBefore(draggedBtn, targetBtn.nextSibling);
+                didMove = true;
+            }
+        } else if (targetBtn !== draggedBtn.nextSibling) {
+            container.insertBefore(draggedBtn, targetBtn);
+            didMove = true;
+        }
+
+        if (didMove) {
+            hasReordered = true;
+            items.forEach(item => {
+                const oldRect = rects.get(item);
+                const newRect = item.getBoundingClientRect();
+                if (oldRect) {
+                    const dy = oldRect.top - newRect.top;
+                    if (dy !== 0 && item !== draggedBtn) {
+                        item.style.transform = `translateY(${dy}px)`;
+                        item.style.transition = 'none';
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                item.style.transform = '';
+                                item.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)';
+                            });
+                        });
+                    }
+                }
+            });
+        }
+    });
+
+    container.addEventListener('pointerup', resetReorderState);
+    container.addEventListener('pointercancel', resetReorderState);
+    container.addEventListener('pointerleave', clearHoldTimer);
+    document.addEventListener('pointerup', resetReorderState);
+
+    container.addEventListener('click', (event) => {
+        if (!shouldSuppressNextClick) return;
+        const navBtn = getNavButton(event.target);
+        if (!navBtn) return;
+        event.preventDefault();
+        event.stopPropagation();
+        shouldSuppressNextClick = false;
+    }, true);
+
+    container.dataset.reorderBound = 'true';
 }
 
 function syncToolIcons() {
@@ -68,7 +205,6 @@ function updatePinnedApps() {
 }
 
 function launchTool(toolId) {
-    if (window.api?.logInfo) window.api.logInfo('Launching tool:', toolId); else console.log('Launching tool:', toolId);
     const tool = TOOL_REGISTRY.find(t => t.id === toolId);
     if (!tool) {
         if (window.api?.logError) window.api.logError('Tool not found:', toolId); else console.error('Tool not found:', toolId);
@@ -102,20 +238,7 @@ function launchTool(toolId) {
 
 function renderSidebarApps() {
     const staticNavs = ['converter', 'folder', 'trim', 'extract-audio', 'downloader', 'inspector'];
-
-    staticNavs.forEach(id => {
-        const navEl = TOOL_REGISTRY.find(t => t.id === id)?.navId;
-        const el = get(navEl);
-        if (el) {
-            if (state.appSettings.pinnedApps.includes(id)) {
-                el.classList.remove('hidden');
-                el.style.display = 'flex';
-            } else {
-                el.classList.add('hidden');
-                el.style.display = 'none';
-            }
-        }
-    });
+    const pinnedSet = new Set(state.appSettings.pinnedApps || []);
 
     document.querySelectorAll('.nav-item.dynamic-tool').forEach(el => el.remove());
 
@@ -124,16 +247,38 @@ function renderSidebarApps() {
     if (!container) return;
 
     state.appSettings.pinnedApps.forEach(toolId => {
-        if (!staticNavs.includes(toolId)) {
-            const tool = TOOL_REGISTRY.find(t => t.id === toolId);
-            if (tool) {
-                const btn = document.createElement('button');
-                btn.className = 'nav-item dynamic-tool';
-                btn.id = `nav-${tool.id}`;
-                btn.title = tool.name;
-                btn.innerHTML = tool.icon;
-                btn.onclick = () => launchTool(tool.id);
-                container.appendChild(btn);
+        const tool = TOOL_REGISTRY.find(t => t.id === toolId);
+        if (!tool) return;
+
+        if (staticNavs.includes(toolId)) {
+            const el = get(tool.navId);
+            if (!el) return;
+            el.classList.remove('hidden');
+            el.style.display = 'flex';
+            container.appendChild(el);
+            return;
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 'nav-item dynamic-tool';
+        btn.id = `nav-${tool.id}`;
+        btn.title = tool.name;
+        btn.innerHTML = tool.icon;
+        btn.dataset.toolId = tool.id;
+        btn.onclick = () => launchTool(tool.id);
+        container.appendChild(btn);
+    });
+
+    staticNavs.forEach(id => {
+        const navEl = TOOL_REGISTRY.find(t => t.id === id)?.navId;
+        const el = get(navEl);
+        if (el) {
+            if (pinnedSet.has(id)) {
+                el.classList.remove('hidden');
+                el.style.display = 'flex';
+            } else {
+                el.classList.add('hidden');
+                el.style.display = 'none';
             }
         }
     });

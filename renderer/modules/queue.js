@@ -61,13 +61,17 @@ export function updateQueueProgress() {
     const statusEl = itemEl.querySelector('.queue-item-status');
     const progressEl = itemEl.querySelector('.queue-progress-bar');
 
+    // Ensure progress is an integer
+    const progress = Math.round(item.progress) || 0;
+
     if (statusEl) {
         const action = item.taskType === 'trim' ? 'Trimming' :
             item.taskType === 'extract' ? 'Extracting' :
-                item.taskType === 'download' ? 'Downloading' : 'Encoding';
-        statusEl.textContent = `${action}... ${item.progress}%`;
+                item.taskType === 'download' ? 'Downloading' :
+                    item.taskType === 'video-to-gif' ? 'Converting to GIF' : 'Encoding';
+        statusEl.textContent = `${action}... ${progress}%`;
     }
-    if (progressEl) progressEl.style.width = `${item.progress}%`;
+    if (progressEl) progressEl.style.width = `${progress}%`;
     itemEl.classList.add('active');
 }
 
@@ -106,6 +110,7 @@ function getTaskLabel(item) {
     if (item.taskType === 'trim') return 'Trim';
     if (item.taskType === 'extract') return 'Extract audio';
     if (item.taskType === 'download') return 'Download';
+    if (item.taskType === 'video-to-gif') return 'Convert to GIF';
     return 'Encode';
 }
 
@@ -144,7 +149,8 @@ export function renderQueue() {
                 ? (item.taskType === 'trim' ? `Trimming... ${item.progress}%` :
                     item.taskType === 'extract' ? `Extracting... ${item.progress}%` :
                         item.taskType === 'download' ? `Downloading... ${item.progress}%` :
-                            `Encoding... ${item.progress}%`)
+                            item.taskType === 'video-to-gif' ? `Converting... ${item.progress}%` :
+                                `Encoding... ${item.progress}%`)
                 : null;
 
             // Only animate items that are newly added
@@ -208,22 +214,43 @@ export function processQueue() {
     const progressTitle = get('progress-title');
     const progressFilename = get('progress-filename');
 
+    const handleTaskError = (e) => {
+        if (window.api && window.api.logError) window.api.logError('Task execution error:', e); else console.error('Task execution error:', e);
+        showPopup(`Error starting task ${nextItem.name}: ${e}`);
+        nextItem.status = 'error';
+        state.setEncodingState(false);
+        state.setCurrentlyEncodingItemId(null);
+        updateQueueUI();
+        updateQueueStatusUI();
+
+        // Try to process next item after a short delay
+        if (state.isQueueRunning) {
+            setTimeout(processQueue, 1500);
+        } else {
+            toggleSidebar(false);
+        }
+    };
+
     if (nextItem.taskType === 'trim') {
         if (progressTitle) progressTitle.textContent = 'Trimming video...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.api.trimVideo(nextItem.options);
+        window.api.trimVideo(nextItem.options).catch(handleTaskError);
     } else if (nextItem.taskType === 'extract') {
         if (progressTitle) progressTitle.textContent = 'Extracting audio...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.api.extractAudio(nextItem.options);
+        window.api.extractAudio(nextItem.options).catch(handleTaskError);
     } else if (nextItem.taskType === 'download') {
         if (progressTitle) progressTitle.textContent = 'Downloading video...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.api.downloadVideo(nextItem.options);
+        window.api.downloadVideo(nextItem.options).catch(handleTaskError);
+    } else if (nextItem.taskType === 'video-to-gif') {
+        if (progressTitle) progressTitle.textContent = 'Converting to GIF...';
+        if (progressFilename) progressFilename.textContent = nextItem.name;
+        window.api.videoToGif(nextItem.options).catch(handleTaskError);
     } else {
         if (progressTitle) progressTitle.textContent = 'Encoding in Progress';
         if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.api.startEncode(nextItem.options);
+        window.api.startEncode(nextItem.options).catch(handleTaskError);
     }
 }
 

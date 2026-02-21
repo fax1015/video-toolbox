@@ -156,6 +156,190 @@
                         </div>
                     </div>
                 </div>
+                <div id="video-to-gif-drop-zone" class="drop-zone hidden">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container" data-tool-id="video-to-gif"></div>
+                        <h2>Create GIF from Video</h2>
+                        <p>Drop a video file to convert</p>
+                        <div class="supported-formats">
+                            Supports MP4, WebM, MKV, MOV, AVI
+                        </div>
+                    </div>
+                </div>
+
+                <div id="video-to-gif-dashboard" class="dashboard hidden">
+                    <button id="vtg-back-btn" class="back-btn" title="Go back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+
+                    <div class="file-card">
+                        <div class="file-icon" id="vtg-file-icon">MP4</div>
+                        <div class="file-details">
+                            <h3 id="vtg-filename">Filename.mp4</h3>
+                            <div class="file-meta">
+                                <span id="vtg-filesize" class="meta-tag" data-animate-number>0 MB</span>
+                                <span id="vtg-duration" class="meta-tag" data-animate-number>00:00:00</span>
+                                <span id="vtg-resolution" class="meta-tag" data-animate-number>1920x1080</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-panel">
+                        <div class="vtg-preview-header">
+                            <h4 class="panel-title">Preview & Crop</h4>
+                            <span id="vtg-crop-info" class="meta-tag" data-animate-number>Full Frame</span>
+                        </div>
+                        <div class="video-preview-container vtg-video-preview-container"
+                            id="vtg-video-preview-container">
+                            <video id="vtg-video-preview" class="trim-video-preview"></video>
+                            <div class="vtg-crop-overlay" id="vtg-crop-overlay">
+                                <div class="vtg-crop-rect hidden" id="vtg-crop-rect"></div>
+                            </div>
+                            <div class="video-overlay" id="vtg-video-overlay" style="pointer-events: none;">
+                                <svg class="play-pause-icon" id="vtg-play-pause-icon" width="64" height="64"
+                                    viewBox="0 0 24 24" fill="white">
+                                    <polygon id="vtg-play-icon-shape" points="5,3 19,12 5,21"></polygon>
+                                    <g id="vtg-pause-icon-shape" class="hidden">
+                                        <rect x="5" y="3" width="4" height="18"></rect>
+                                        <rect x="15" y="3" width="4" height="18"></rect>
+                                    </g>
+                                </svg>
+                            </div>
+                            <div class="video-controls">
+                                <button class="video-control-btn" id="vtg-play-btn" title="Play/Pause">
+                                    <svg id="vtg-play-btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21"></polygon>
+                                    </svg>
+                                    <svg id="vtg-pause-btn-icon" class="hidden" width="20" height="20"
+                                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="6" y="4" width="4" height="16"></rect>
+                                        <rect x="14" y="4" width="4" height="16"></rect>
+                                    </svg>
+                                </button>
+                                <span class="video-time" id="vtg-video-current-time">00:00</span>
+                                <div class="volume-control">
+                                    <button class="mute-btn" id="vtg-mute-btn" title="Mute/Unmute">
+                                        <svg id="vtg-volume-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                            <path id="vtg-volume-waves"
+                                                d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                                        </svg>
+                                        <svg id="vtg-muted-icon" class="hidden" width="20" height="20"
+                                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                            <line x1="23" y1="9" x2="17" y2="15"></line>
+                                            <line x1="17" y1="9" x2="23" y2="15"></line>
+                                        </svg>
+                                    </button>
+                                    <div class="volume-slider-container">
+                                        <input type="range" class="volume-slider" id="vtg-volume-slider" min="0" max="1"
+                                            step="0.05" value="0">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="vtg-timeline-row">
+                            <div class="trim-timeline-wrap vtg-trim-timeline-wrap">
+                                <div class="trim-timeline" id="vtg-trim-timeline">
+                                    <div class="trim-track-area" id="vtg-trim-track-area">
+                                        <div class="trim-timeline-track" id="vtg-trim-track">
+                                            <div class="trim-track-inner" id="vtg-trim-track-inner">
+                                                <div class="trim-playhead" id="vtg-trim-playhead"></div>
+                                                <div class="trim-timeline-inactive" id="vtg-trim-inactive-start"></div>
+                                                <div class="trim-timeline-active" id="vtg-trim-active-segment"></div>
+                                                <div class="trim-timeline-inactive" id="vtg-trim-inactive-end"></div>
+                                                <div class="trim-handle trim-handle-left" id="vtg-trim-handle-left"
+                                                    title="Drag to set start"></div>
+                                                <div class="trim-handle trim-handle-right" id="vtg-trim-handle-right"
+                                                    title="Drag to set end"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button id="vtg-crop-reset-btn" class="secondary-btn vtg-crop-reset-btn" type="button"
+                                title="Reset Crop">
+                                <svg id="vtg-crop-btn-icon-crop" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+                                    <path d="M18 22V8a2 2 0 0 0-2-2H2" />
+                                </svg>
+                                <svg id="vtg-crop-btn-icon-reset" class="hidden" width="18" height="18"
+                                    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 12a9 9 0 1 1-3-6.7" />
+                                    <path d="M21 3v6h-6" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-panel">
+                        <h4 class="panel-title">Time Range</h4>
+                        <div class="settings-grid">
+                            <div class="control-group">
+                                <label for="vtg-start">Start</label>
+                                <input type="text" id="vtg-start" placeholder="00:00:00.00" value="00:00:00.00">
+                            </div>
+                            <div class="control-group">
+                                <label for="vtg-end">End</label>
+                                <input type="text" id="vtg-end" placeholder="00:00:00.00" value="00:00:00.00">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-panel">
+                        <h4 class="panel-title">GIF Settings</h4>
+
+                        <div class="settings-grid">
+                            <div class="control-group">
+                                <label>Quality (FPS)</label>
+                                <select id="vtg-fps">
+                                    <option value="10">10 FPS (Small size)</option>
+                                    <option value="15" selected>15 FPS (Standard)</option>
+                                    <option value="24">24 FPS (Smooth)</option>
+                                    <option value="30">30 FPS (Very Smooth)</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group">
+                                <label>Max Width</label>
+                                <select id="vtg-width">
+                                    <option value="240">240px (Tiny)</option>
+                                    <option value="320">320px (Small)</option>
+                                    <option value="480" selected>480px (Medium)</option>
+                                    <option value="640">640px (Large)</option>
+                                    <option value="800">800px (Extra Large)</option>
+                                </select>
+                            </div>
+
+                            <div class="control-group">
+                                <label>Speed</label>
+                                <select id="vtg-speed">
+                                    <option value="0.5">0.5x</option>
+                                    <option value="0.75">0.75x</option>
+                                    <option value="1" selected>1x</option>
+                                    <option value="1.25">1.25x</option>
+                                    <option value="1.5">1.5x</option>
+                                    <option value="2">2x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-actions">
+                        <button id="vtg-add-queue-btn" class="secondary-btn">Add to Queue</button>
+                        <button id="vtg-convert-btn" class="primary-btn">Convert Now</button>
+                    </div>
+                </div>
 
 
                 <div id="downloader-dashboard" class="drop-zone hidden">
@@ -210,7 +394,7 @@
                     <div class="file-card" id="dl-preview-card">
                         <div class="dl-thumbnail-wrapper"
                             style="width: 120px; height: 68px; border-radius: var(--border-radius-sm); overflow: hidden; background: var(--bg-tertiary); flex-shrink: 0;">
-                            <img id="dl-thumbnail" src="" alt="Video Thumbnail"
+                            <img id="dl-thumbnail" src="" alt="Video Thumbnail" crossorigin="anonymous"
                                 style="width: 100%; height: 100%; object-fit: cover; display: none;">
                             <div id="dl-thumbnail-placeholder"
                                 style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
@@ -718,7 +902,9 @@
                             <video id="trim-video-preview" class="trim-video-preview"></video>
                             <div class="trim-loading hidden" id="trim-loading" aria-live="polite">
                                 <div class="loader-shell" data-loader="bars" data-loader-size="40"></div>
-                                <span>Loading preview...</span>
+                                <span id="trim-loading-text">Loading preview...</span>
+                                <span id="trim-loading-status"
+                                    style="font-size: 0.8em; opacity: 0.6; margin-top: 4px;">Initializing...</span>
                             </div>
                             <div id="scrub-preview" class="scrub-preview hidden"></div>
                             <div class="video-overlay" id="video-overlay"
@@ -780,20 +966,20 @@
                                     </div>
                                 </div>
                                 <div class="trim-track-area" id="trim-track-area">
-                                    <div class="trim-playhead" id="trim-playhead"></div>
                                     <div class="trim-waveform-wrap" id="trim-waveform-wrap">
                                         <img id="trim-waveform-img" class="trim-waveform-img" alt="" />
                                     </div>
                                     <div class="trim-timeline-track" id="trim-track">
-                                        <div class="trim-timeline-inactive" id="trim-inactive-start"></div>
-                                        <div class="trim-range-handles" id="trim-range-handles">
+                                        <div class="trim-track-inner" id="trim-track-inner">
+                                            <div class="trim-playhead" id="trim-playhead"></div>
+                                            <div class="trim-timeline-inactive" id="trim-inactive-start"></div>
+                                            <div class="trim-timeline-active" id="trim-active-segment"></div>
+                                            <div class="trim-timeline-inactive" id="trim-inactive-end"></div>
                                             <div class="trim-handle trim-handle-left" id="trim-handle-left"
                                                 title="Drag to set start"></div>
-                                            <div class="trim-timeline-active" id="trim-active-segment"></div>
                                             <div class="trim-handle trim-handle-right" id="trim-handle-right"
                                                 title="Drag to set end"></div>
                                         </div>
-                                        <div class="trim-timeline-inactive" id="trim-inactive-end"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1374,6 +1560,7 @@
                             <h4 class="panel-title">Hardware Support</h4>
                             <div class="control-group">
                                 <label>Hardware Acceleration</label>
+                                <p class="help-text">Experimental: May not work on all systems.</p>
                                 <div class="hw-accel-wrapper">
                                     <select id="hw-accel">
                                         <option value="auto">Auto Select</option>
@@ -1384,11 +1571,10 @@
                                     </select>
                                     <span id="hw-auto-tag" class="auto-tag hidden">(auto selected)</span>
                                 </div>
-                                <p class="help-text">Experimental: May not work on all systems.</p>
-                                <br>
                             </div>
                             <div class="control-group">
                                 <label>CPU Threads</label>
+                                <p class="help-text">0 = Auto (Recommended)</p>
                                 <div class="number-input-container">
                                     <button type="button" class="number-stepper-btn decrement"
                                         data-input-id="cpu-threads" aria-label="Decrease CPU threads"></button>
@@ -1404,7 +1590,6 @@
                                     <button type="button" class="number-stepper-btn increment"
                                         data-input-id="cpu-threads" aria-label="Increase CPU threads"></button>
                                 </div>
-                                <p class="help-text">0 = Auto (Recommended)</p>
                             </div>
                         </section>
 
@@ -1415,7 +1600,6 @@
                                 <input type="text" id="output-suffix" value="_encoded" placeholder="_encoded">
                             </div>
                             <div class="control-group">
-                                <br>
                                 <label>Output Folder</label>
                                 <div class="folder-input-group">
                                     <input type="text" id="output-folder" placeholder="Same as source">
@@ -1424,7 +1608,10 @@
                             </div>
                             <div class="control-group">
                                 <label class="checkbox-label">
-                                    <span>Overwrite existing files</span>
+                                    <div class="checkbox-info">
+                                        <span>Overwrite existing files</span>
+                                        <p class="help-text">Automatically replace files if they already exist.</p>
+                                    </div>
                                     <input type="checkbox" id="overwrite-files">
                                 </label>
                             </div>
@@ -1442,19 +1629,31 @@
                             <h4 class="panel-title">Behavior</h4>
                             <div class="control-group">
                                 <label class="checkbox-label">
-                                    <span>Notify on completion</span>
+                                    <div class="checkbox-info">
+                                        <span>Notify on completion</span>
+                                        <p class="help-text">Get a notification and play a sound when tasks finish.</p>
+                                    </div>
                                     <input type="checkbox" id="notify-on-complete" checked>
                                 </label>
                             </div>
                             <div class="control-group">
+                                <label class="checkbox-label">
+                                    <div class="checkbox-info">
+                                        <span>Wait for indexing (Trimmer)</span>
+                                        <p class="help-text">Wait for thumbnails/waveforms before starting.</p>
+                                    </div>
+                                    <input type="checkbox" id="wait-for-indexing" checked>
+                                </label>
+                            </div>
+                            <div class="control-group">
                                 <label>Work Priority Level</label>
+                                <p class="help-text">Controls CPU/GPU priority for encoding tasks.</p>
                                 <select id="work-priority-select">
                                     <option value="normal">Normal</option>
                                     <option value="high">High</option>
                                     <option value="low">Low</option>
                                     <option value="idle">Idle</option>
                                 </select>
-                                <p class="help-text">Controls CPU/GPU priority for encoding tasks.</p>
                             </div>
                         </section>
 
@@ -1470,7 +1669,6 @@
                                 </select>
                             </div>
                             <div class="control-group">
-                                <br>
                                 <label>Accent Color</label>
                                 <select id="accent-color-select">
                                     <option value="green">Green (Default)</option>
@@ -1483,9 +1681,12 @@
                                 </select>
                             </div>
                             <div class="control-group">
-                                <br>
                                 <label class="checkbox-label">
-                                    <span>Show Background Blobs</span>
+                                    <div class="checkbox-info">
+                                        <span>Show Background Blobs</span>
+                                        <p class="help-text">Toggle animated background orbs for a cleaner interface.
+                                        </p>
+                                    </div>
                                     <input type="checkbox" id="show-blobs" checked>
                                 </label>
                             </div>

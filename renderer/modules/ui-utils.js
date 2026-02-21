@@ -307,7 +307,8 @@ export function showView(view) {
         'image-to-pdf-drop-zone', 'image-to-pdf-dashboard', 'trim-drop-zone', 'trim-dashboard',
         'file-dashboard', 'progress-view', 'complete-view', 'settings-view', 'queue-view',
         'apps-dashboard', 'inspector-view', 'inspector-drop-zone', 'downloader-dashboard',
-        'dl-options-dashboard', 'dl-progress-view', 'dl-complete-view'
+        'dl-options-dashboard', 'dl-progress-view', 'dl-complete-view', 'video-to-gif-drop-zone',
+        'video-to-gif-dashboard'
     ];
 
     allViews.forEach(id => {
@@ -364,7 +365,20 @@ export function animateAutoHeight(container, changeFn, options = {}) {
         return;
     }
 
-    const startHeight = container.getBoundingClientRect().height;
+    const toNumber = (value) => Number.parseFloat(value) || 0;
+    const verticalExtras =
+        toNumber(computed.paddingTop) +
+        toNumber(computed.paddingBottom) +
+        toNumber(computed.borderTopWidth) +
+        toNumber(computed.borderBottomWidth);
+    const usesBorderBox = computed.boxSizing === 'border-box';
+    const toCssHeight = (layoutHeight) => {
+        if (usesBorderBox) return layoutHeight;
+        return Math.max(0, layoutHeight - verticalExtras);
+    };
+
+    // Use offsetHeight so transforms (e.g. pop-in scale animations) don't skew measurements.
+    const startHeight = container.offsetHeight;
 
     if (container.__heightTweenHandler) {
         container.removeEventListener('transitionend', container.__heightTweenHandler);
@@ -375,10 +389,10 @@ export function animateAutoHeight(container, changeFn, options = {}) {
     container.style.transition = 'none';
     container.style.height = 'auto';
     changeFn();
-    const endHeight = container.getBoundingClientRect().height;
+    const endHeight = container.offsetHeight;
 
     // Reset to start height
-    container.style.height = `${startHeight}px`;
+    container.style.height = `${toCssHeight(startHeight)}px`;
 
     // Force reflow
     void container.offsetHeight;
@@ -404,7 +418,7 @@ export function animateAutoHeight(container, changeFn, options = {}) {
         container.style.transition = `height ${duration}ms ${easing}`;
         container.style.overflow = 'hidden';
         container.style.willChange = 'height';
-        container.style.height = `${endHeight}px`;
+        container.style.height = `${toCssHeight(endHeight)}px`;
     });
 }
 

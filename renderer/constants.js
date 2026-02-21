@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS = {
     showBlobs: true,
     skeuoMode: false,
     cpuThreads: 0,
+    waitForIndexing: true,
     pinnedApps: ['converter', 'folder', 'trim', 'extract-audio']
 };
 
@@ -109,6 +110,15 @@ export const TOOL_REGISTRY = [
         icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>`,
         viewId: 'inspector-drop-zone',
         navId: 'nav-inspector',
+        action: 'view'
+    },
+    {
+        id: 'video-to-gif',
+        name: 'Video to GIF',
+        description: 'Convert specific video segments into high-quality animated GIFs.',
+        icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`,
+        viewId: 'video-to-gif-drop-zone',
+        navId: 'nav-video-to-gif',
         action: 'view'
     },
     {

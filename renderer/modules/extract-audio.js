@@ -1,6 +1,6 @@
 // Audio Extractor Module
 
-import { get, showView, resetProgress, resetNav } from './ui-utils.js';
+import { get, showView, resetProgress, resetNav, toggleSidebar } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue } from './queue.js';
 
@@ -68,17 +68,17 @@ export async function handleExtractFileSelection(filePath, options = {}) {
     if (extractAudioBitrateSelect && options.bitrate) {
         extractAudioBitrateSelect.value = options.bitrate;
     }
-    if (extractSampleRateSelect && options.sampleRate) {
-        extractSampleRateSelect.value = options.sampleRate;
+    if (extractSampleRateSelect && (options.sample_rate || options.sampleRate)) {
+        extractSampleRateSelect.value = options.sample_rate || options.sampleRate;
     }
-    if (extractMp3ModeSelect && options.mp3Mode) {
-        extractMp3ModeSelect.value = options.mp3Mode;
+    if (extractMp3ModeSelect && (options.mp3_mode || options.mp3Mode)) {
+        extractMp3ModeSelect.value = options.mp3_mode || options.mp3Mode;
     }
-    if (extractMp3QualitySelect && options.mp3Quality) {
-        extractMp3QualitySelect.value = options.mp3Quality;
+    if (extractMp3QualitySelect && (options.mp3_quality || options.mp3Quality)) {
+        extractMp3QualitySelect.value = options.mp3_quality || options.mp3Quality;
     }
-    if (extractFlacLevelSelect && options.flacLevel) {
-        extractFlacLevelSelect.value = options.flacLevel;
+    if (extractFlacLevelSelect && (options.flac_level || options.flacLevel)) {
+        extractFlacLevelSelect.value = options.flac_level || options.flacLevel;
     }
 
     updateExtractBitrateVisibility();
@@ -116,10 +116,11 @@ function getExtractOptionsFromUI() {
         input: extractFilePath,
         format,
         bitrate,
-        sampleRate,
-        mp3Mode: format === 'mp3' ? mp3Mode : null,
-        mp3Quality: format === 'mp3' && mp3Mode === 'vbr' ? mp3Quality : null,
-        flacLevel: format === 'flac' ? flacLevel : null
+        sample_rate: sampleRate,
+        mp3_mode: format === 'mp3' ? mp3Mode : null,
+        mp3_quality: format === 'mp3' && mp3Mode === 'vbr' ? mp3Quality : null,
+        flac_level: format === 'flac' ? flacLevel : null,
+        output_folder: get('output-folder')?.value || ''
     };
 }
 
@@ -225,19 +226,19 @@ export function setupExtractAudioHandlers() {
             if (progressFilename) progressFilename.textContent = extractFilePath.split(/[\\/]/).pop();
             resetProgress();
             showView(progressView);
-
-            const toggleSidebar = (disabled) => {
-                const navItems = document.querySelectorAll('.nav-item');
-                navItems.forEach(btn => {
-                    btn.classList.toggle('disabled', disabled);
-                });
-            };
             toggleSidebar(true);
 
             const options = getExtractOptionsFromUI();
             window.api.extractAudio({
                 ...options,
-                workPriority: state.appSettings.workPriority || 'normal'
+                work_priority: state.appSettings.workPriority || 'normal'
+            }).catch(e => {
+                if (window.api?.logError) window.api.logError('Extract audio error:', e); else console.error('Extract audio error:', e);
+                state.setEncodingState(false);
+                state.setExtracting(false);
+                const progressView = get('progress-view');
+                if (progressView) progressView.classList.add('hidden');
+                showPopup(`Error starting audio extraction: ${e}`);
             });
         });
     }
