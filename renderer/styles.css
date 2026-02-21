@@ -1093,13 +1093,13 @@ button {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .control-group {
     display: flex;
     flex-direction: column;
-    margin-bottom: 16px;
+    margin-bottom: 24px;
 }
 
 .control-group:last-child {
@@ -1111,9 +1111,7 @@ button {
     font-weight: 500;
     color: var(--text-secondary);
     margin-bottom: 8px;
-    /* Increased from 6px */
     margin-top: 0;
-    /* Reduced from 4px */
 }
 
 select.replaced {
@@ -1844,7 +1842,6 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     cursor: pointer;
     user-select: none;
     font-size: var(--font-medium);
-    padding: 12px 0;
     color: var(--text-secondary);
     transition: var(--transition);
     border-radius: var(--border-radius-sm);

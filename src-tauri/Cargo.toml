@@ -1,6 +1,6 @@
 [package]
 name = "video-toolbox"
-version = "0.7.2"
+version = "0.7.3"
 description = "Video Toolbox - A Tauri-based video processing application"
 authors = ["fax1015"]
 license = "MIT"
