@@ -24,6 +24,134 @@ fn new_command(program: &str) -> Command {
     cmd
 }
 
+#[tauri::command]
+async fn image_to_gif(options: ImageToGifOptions) -> Result<String, String> {
+    if options.image_paths.is_empty() {
+        return Err("No images provided".to_string());
+    }
+
+    let ffmpeg_path = get_ffmpeg_path();
+    let fps = options.fps.unwrap_or(12).clamp(1, 60);
+    let width = options.width.unwrap_or(480).clamp(64, 4096);
+
+    let first_path = PathBuf::from(&options.image_paths[0]);
+    let first_stem = first_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "animated".to_string());
+    let output_path = if let Some(ref explicit) = options.output_path.as_ref().filter(|v| !v.is_empty()) {
+        PathBuf::from(explicit.as_str())
+    } else {
+        let output_base = options
+            .output_folder
+            .as_ref()
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| first_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".")));
+        output_base.join(format!("{}_animated.gif", first_stem))
+    };
+
+    let mut concat_file = std::env::temp_dir();
+    concat_file.push(format!("video_toolbox_gif_{}.txt", uuid_like_seed(&options.image_paths)));
+
+    let mut concat_lines = String::new();
+    for (index, image_path) in options.image_paths.iter().enumerate() {
+        let path = image_path.replace('\\', "/").replace("'", "'\\''");
+        concat_lines.push_str(&format!("file '{}'\n", path));
+        let duration_ms = options
+            .frame_durations_ms
+            .as_ref()
+            .and_then(|arr| arr.get(index).copied())
+            .unwrap_or((1000.0 / fps as f64).round().max(10.0) as u32);
+        concat_lines.push_str(&format!("duration {:.3}\n", duration_ms as f64 / 1000.0));
+    }
+    if let Some(last) = options.image_paths.last() {
+        let path = last.replace('\\', "/").replace("'", "'\\''");
+        concat_lines.push_str(&format!("file '{}'\n", path));
+    }
+    std::fs::write(&concat_file, concat_lines).map_err(|e| format!("Failed to write temp concat file: {}", e))?;
+
+    let output_path_str = output_path.to_string_lossy().to_string();
+    let concat_str = concat_file.to_string_lossy().to_string();
+    let vf = format!("fps={},scale={}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse", fps, width);
+
+    let output = new_command(&ffmpeg_path)
+        .args(&[
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            &concat_str,
+            "-vf",
+            &vf,
+            &output_path_str,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    let _ = std::fs::remove_file(&concat_file);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to create GIF: {}", stderr));
+    }
+
+    Ok(output_path_str)
+}
+
+#[tauri::command]
+async fn pdf_to_images(pdf_path: String, output_dir: String, format: Option<String>) -> Result<String, String> {
+    let validated_pdf = validate_path(&pdf_path).ok_or("Invalid PDF path")?;
+    let pdf_stem = validated_pdf
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "pages".to_string());
+
+    let output_root = PathBuf::from(output_dir);
+    if !output_root.exists() {
+        return Err("Selected output directory does not exist".to_string());
+    }
+
+    let target_format = format.unwrap_or_else(|| "png".to_string()).to_lowercase();
+    let ext = if target_format == "jpg" || target_format == "jpeg" { "jpg" } else { "png" };
+
+    let export_folder = output_root.join(format!("{}_pages", pdf_stem));
+    std::fs::create_dir_all(&export_folder).map_err(|e| format!("Failed to create export folder: {}", e))?;
+
+    let output_pattern = export_folder.join(format!("page_%04d.{}", ext)).to_string_lossy().to_string();
+    let ffmpeg_path = get_ffmpeg_path();
+    let output = new_command(&ffmpeg_path)
+        .args(&[
+            "-y",
+            "-i",
+            &pdf_path,
+            "-vsync",
+            "0",
+            &output_pattern,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg for PDF export: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to convert PDF pages: {}", stderr));
+    }
+
+    Ok(export_folder.to_string_lossy().to_string())
+}
+
+fn uuid_like_seed(paths: &[String]) -> u64 {
+    let mut acc: u64 = 1469598103934665603;
+    for p in paths {
+        for b in p.as_bytes() {
+            acc ^= *b as u64;
+            acc = acc.wrapping_mul(1099511628211);
+        }
+    }
+    acc
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Filter {
     pub name: String,
@@ -76,6 +204,24 @@ pub struct ExtractAudioOptions {
     pub flac_level: Option<String>,
     pub output_folder: Option<String>,
     pub work_priority: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageToGifOptions {
+    pub image_paths: Vec<String>,
+    pub fps: Option<u32>,
+    pub width: Option<u32>,
+    pub frame_durations_ms: Option<Vec<u32>>,
+    pub output_folder: Option<String>,
+    pub output_path: Option<String>,
+    pub work_priority: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfToImagesOptions {
+    pub pdf_path: String,
+    pub output_dir: String,
+    pub format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2857,6 +3003,7 @@ pub fn run() {
             extract_audio,
             trim_video,
             video_to_gif,
+            image_to_gif,
             cancel_encode,
             // Media processing
             get_audio_waveform,
@@ -2871,6 +3018,7 @@ pub fn run() {
             open_external,
             // PDF commands
             convert_images_to_pdf,
+            pdf_to_images,
             frontend_log,
         ])
         .run(tauri::generate_context!())

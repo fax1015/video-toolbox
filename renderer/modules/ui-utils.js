@@ -304,11 +304,11 @@ export function showView(view) {
 
     const allViews = [
         'drop-zone', 'folder-drop-zone', 'extract-audio-drop-zone', 'extract-audio-dashboard',
-        'image-to-pdf-drop-zone', 'image-to-pdf-dashboard', 'trim-drop-zone', 'trim-dashboard',
+        'pdf-tools-drop-zone', 'pdf-tools-dashboard', 'trim-drop-zone', 'trim-dashboard',
         'file-dashboard', 'progress-view', 'complete-view', 'settings-view', 'queue-view',
         'apps-dashboard', 'inspector-view', 'inspector-drop-zone', 'downloader-dashboard',
-        'dl-options-dashboard', 'dl-progress-view', 'dl-complete-view', 'video-to-gif-drop-zone',
-        'video-to-gif-dashboard'
+        'dl-options-dashboard', 'dl-progress-view', 'dl-complete-view', 'gif-tools-drop-zone',
+        'gif-tools-dashboard'
     ];
 
     allViews.forEach(id => {

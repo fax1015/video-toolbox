@@ -884,14 +884,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const navVideoToGif = get('nav-video-to-gif');
-    if (navVideoToGif) {
-        navVideoToGif.addEventListener('click', async () => {
+    const navGifTools = get('nav-gif-tools');
+    if (navGifTools) {
+        navGifTools.addEventListener('click', async () => {
             clearImageToPdf();
             await loadVideoToGif();
             resetNav();
-            navVideoToGif.classList.add('active');
-            showView(get('video-to-gif-drop-zone'));
+            navGifTools.classList.add('active');
+            showView(get('gif-tools-drop-zone'));
             scheduleSidebarIndicatorUpdate();
         });
     }
@@ -1074,13 +1074,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 showView(extractAudioDropZone);
                 resetNav();
                 if (navExtractAudio) navExtractAudio.classList.add('active');
-            } else if (state.lastActiveViewId === 'imageToPdfDropZone') {
-                const imageDropZone = get('image-to-pdf-drop-zone');
+            } else if (state.lastActiveViewId === 'pdfToolsDropZone') {
+                const imageDropZone = get('pdf-tools-drop-zone');
                 clearImageToPdf();
                 showView(imageDropZone);
                 resetNav();
-            } else if (state.lastActiveViewId === 'videoToGifDropZone') {
-                const videoToGifDropZone = get('video-to-gif-drop-zone');
+            } else if (state.lastActiveViewId === 'gifToolsDropZone') {
+                const videoToGifDropZone = get('gif-tools-drop-zone');
                 showView(videoToGifDropZone);
                 resetNav();
             } else {
@@ -1151,12 +1151,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (item && item.taskType === 'video-to-gif') {
+        if (item && item.taskType === 'gif-tools') {
             state.setCurrentEditingQueueId(id);
-            const vtgDashboard = get('video-to-gif-dashboard');
+            const vtgDashboard = get('gif-tools-dashboard');
             showView(vtgDashboard);
             resetNav();
-            const navVtg = get('nav-video-to-gif');
+            const navVtg = get('nav-gif-tools');
             if (navVtg) navVtg.classList.add('active');
 
             await loadVideoToGif();

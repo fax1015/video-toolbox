@@ -4,6 +4,7 @@ import { get, showPopup, showView, renderLoaders, formatBytes, animateAutoHeight
 import * as state from './state.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff']);
+const PDF_EXTENSIONS = new Set(['.pdf']);
 
 let selectedImages = [];
 let dragIndex = null;
@@ -13,6 +14,8 @@ let isDragging = false;
 let compressionQuality = 80;
 let upscaleToMax = false;
 const EDGE_SIZE = 140;
+let pdfToolsMode = 'images-to-pdf';
+let selectedPdfPath = null;
 
 
 // Custom drag state (mouse-based implementation for WebView2 compatibility)
@@ -36,6 +39,14 @@ function isSupportedImage(path) {
     const idx = lower.lastIndexOf('.');
     if (idx === -1) return false;
     return IMAGE_EXTENSIONS.has(lower.slice(idx));
+}
+
+function isSupportedPdf(path) {
+    if (!path || typeof path !== 'string') return false;
+    const lower = path.toLowerCase();
+    const idx = lower.lastIndexOf('.');
+    if (idx === -1) return false;
+    return PDF_EXTENSIONS.has(lower.slice(idx));
 }
 
 function normalizeImagePaths(paths) {
@@ -81,7 +92,7 @@ function uniqueAppendImages(paths) {
 
 function updateConvertState(convertBtn, emptyMessage) {
     const hasItems = selectedImages.length > 0;
-    if (convertBtn) convertBtn.disabled = !hasItems;
+    if (convertBtn) convertBtn.disabled = pdfToolsMode === 'images-to-pdf' ? !hasItems : !selectedPdfPath;
     const controls = get('image-to-pdf-controls');
 
     if (controls) {
@@ -128,6 +139,89 @@ export function updateEstSize() {
     estimated += selectedImages.length * 1024;
 
     estSizeEl.textContent = formatBytes(estimated);
+}
+
+function setPdfToolsMode(mode) {
+    pdfToolsMode = mode;
+    const imageModeWrap = get('pdf-tools-image-mode');
+    const imageModeActions = get('pdf-tools-image-actions');
+    const pdfModeWrap = get('pdf-tools-pdf-mode');
+    const convertBtn = get('image-to-pdf-convert-btn');
+
+    if (imageModeWrap) imageModeWrap.classList.toggle('hidden', mode !== 'images-to-pdf');
+    if (imageModeActions) imageModeActions.classList.toggle('hidden', mode !== 'images-to-pdf');
+    if (pdfModeWrap) pdfModeWrap.classList.toggle('hidden', mode !== 'pdf-to-images');
+    if (convertBtn) convertBtn.textContent = mode === 'images-to-pdf' ? 'Convert to PDF' : 'Export PDF Pages';
+}
+
+function setSelectedPdf(path) {
+    selectedPdfPath = path;
+    const label = get('pdf-tools-pdf-input-label');
+    if (label) {
+        label.textContent = path ? `Selected: ${path.split(/[\\/]/).pop()}` : 'No PDF selected.';
+    }
+}
+
+async function pickPdfToolsFiles() {
+    const paths = await window.api.selectFiles({
+        filters: [
+            { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff'] },
+            { name: 'PDF', extensions: ['pdf'] }
+        ]
+    });
+    return Array.isArray(paths) ? paths : [];
+}
+
+async function convertPdfToImages() {
+    if (!selectedPdfPath) {
+        showPopup('Select a PDF first.');
+        return;
+    }
+
+    const outputRoot = await window.api.selectFolder();
+    if (!outputRoot) return;
+
+    const convertBtn = get('pdf-tools-convert-btn');
+    const convertBtnHtml = convertBtn ? convertBtn.innerHTML : '';
+    const outputFormat = get('pdf-tools-image-format')?.value || 'png';
+
+    if (convertBtn) {
+        convertBtn.disabled = true;
+        convertBtn.innerHTML = `<span class="loader-shell" data-loader data-loader-size="18"></span> Exporting...`;
+        renderLoaders({ selector: '#pdf-tools-convert-btn [data-loader]' });
+    }
+
+    try {
+        state.setLastActiveViewId('pdfToolsDropZone');
+        const outputFolder = await window.api.pdfToImages({
+            pdfPath: selectedPdfPath,
+            outputDir: outputRoot,
+            format: outputFormat,
+        });
+
+        if (!outputFolder) {
+            showPopup('Failed to export PDF pages.');
+            return;
+        }
+
+        const completeTitle = get('complete-title');
+        const outputPathEl = get('output-path');
+        const completeView = get('complete-view');
+        const newEncodeBtn = get('new-encode-btn');
+
+        if (completeTitle) completeTitle.textContent = 'PDF Pages Exported!';
+        if (newEncodeBtn) newEncodeBtn.textContent = 'Export Another PDF';
+        if (outputPathEl) outputPathEl.textContent = outputFolder;
+        state.setCurrentOutputPath(outputFolder);
+        showView(completeView);
+    } catch (err) {
+        showPopup(`Failed to export PDF pages: ${err.message}`);
+    } finally {
+        if (convertBtn) {
+            convertBtn.disabled = false;
+            convertBtn.innerHTML = convertBtnHtml;
+        }
+    }
 }
 
 function toFileUrl(filePath) {
@@ -837,6 +931,7 @@ export function clearImages() {
 
     selectedImages = [];
     renderImagePreview();
+    setPdfToolsMode('images-to-pdf');
 }
 
 function sortImages(criteria) {
@@ -908,7 +1003,7 @@ async function convertImagesToPdf() {
     const baseName = firstName.replace(/\.[^.]+$/, '');
     let outputPath = await window.api.saveFile({
         title: 'Save PDF',
-        defaultPath: `${baseName}.pdf`,
+        defaultName: `${baseName}.pdf`,
         filters: [{ name: 'PDF', extensions: ['pdf'] }]
     });
 
@@ -928,7 +1023,7 @@ async function convertImagesToPdf() {
     }
 
     try {
-        state.setLastActiveViewId('imageToPdfDropZone');
+        state.setLastActiveViewId('pdfToolsDropZone');
         const outputPathResult = await window.api.convertImagesToPdf({
             imagePaths: selectedImages.map((img) => img.path),
             outputPath,
@@ -962,8 +1057,8 @@ async function convertImagesToPdf() {
 }
 
 export function setupImageToPdfHandlers() {
-    const dropZone = get('image-to-pdf-drop-zone');
-    const dashboard = get('image-to-pdf-dashboard');
+    const dropZone = get('pdf-tools-drop-zone');
+    const dashboard = get('pdf-tools-dashboard');
     const backBtn = get('image-to-pdf-back-btn');
     const addBtn = get('image-to-pdf-add-btn');
     const clearBtn = get('image-to-pdf-clear-btn');
@@ -972,6 +1067,7 @@ export function setupImageToPdfHandlers() {
     const previewWrap = preview ? preview.closest('.image-preview-wrap') : null;
     const imageViewerOverlay = get('image-viewer-overlay');
     const imageViewerClose = get('image-viewer-close');
+    const pdfExportBtn = get('pdf-tools-convert-btn');
 
     if (dropZone) {
         dropZone.addEventListener('dragover', (e) => {
@@ -983,15 +1079,41 @@ export function setupImageToPdfHandlers() {
             e.preventDefault();
             dropZone.classList.remove('drag-over');
             const files = Array.from(e.dataTransfer.files || []).map((file) => file.path);
-            handleImageSelection(files).then((didAdd) => {
-                if (didAdd) showView(dashboard);
+            const images = normalizeImagePaths(files);
+            const pdf = files.find((path) => isSupportedPdf(path));
+            if (pdf) {
+                clearImages();
+                setPdfToolsMode('pdf-to-images');
+                setSelectedPdf(pdf);
+                showView(dashboard);
+                return;
+            }
+            handleImageSelection(images).then((didAdd) => {
+                if (didAdd) {
+                    setPdfToolsMode('images-to-pdf');
+                    setSelectedPdf(null);
+                    showView(dashboard);
+                }
             });
         });
         dropZone.addEventListener('click', async () => {
-            const paths = await pickImages();
+            const paths = await pickPdfToolsFiles();
             if (paths.length === 0) return;
-            handleImageSelection(paths).then((didAdd) => {
-                if (didAdd) showView(dashboard);
+            const images = normalizeImagePaths(paths);
+            const pdf = paths.find((path) => isSupportedPdf(path));
+            if (pdf) {
+                clearImages();
+                setPdfToolsMode('pdf-to-images');
+                setSelectedPdf(pdf);
+                showView(dashboard);
+                return;
+            }
+            handleImageSelection(images).then((didAdd) => {
+                if (didAdd) {
+                    setPdfToolsMode('images-to-pdf');
+                    setSelectedPdf(null);
+                    showView(dashboard);
+                }
             });
         });
     }
@@ -999,6 +1121,8 @@ export function setupImageToPdfHandlers() {
     if (backBtn) {
         backBtn.addEventListener('click', () => {
             clearImages();
+            setSelectedPdf(null);
+            setPdfToolsMode('images-to-pdf');
             showView(dropZone);
         });
     }
@@ -1020,6 +1144,12 @@ export function setupImageToPdfHandlers() {
     if (convertBtn) {
         convertBtn.addEventListener('click', () => {
             convertImagesToPdf();
+        });
+    }
+
+    if (pdfExportBtn) {
+        pdfExportBtn.addEventListener('click', () => {
+            convertPdfToImages();
         });
     }
 

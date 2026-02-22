@@ -1,6 +1,6 @@
 {
   "name": "video-toolbox",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Video Toolbox - A Tauri-based video processing application",
   "keywords": [
     "tauri",

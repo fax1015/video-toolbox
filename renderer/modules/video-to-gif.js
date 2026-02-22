@@ -14,6 +14,85 @@ let currentCrop = null;
 let cropDrag = null;
 const MIN_CROP_SIZE_PX = 8;
 
+// GIF image-mode state
+let gftMode = 'video'; // 'video' | 'images'
+const GIF_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff']);
+const GIF_VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.webm']);
+const GIF_VIDEO_AND_IMAGE_EXTENSIONS = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff'];
+let gftFrames = []; // [{ path, name, ext, sizeBytes, dateAdded, durationMs }]
+let gftGlobalDelayMs = 83; // ~12fps
+let gftTimelineDragState = null; // { index, startX, origDurationMs }
+let gftFrameDragIndex = null;
+let gftFrameIsDragging = false;
+let gftFrameDragGhost = null;
+let gftFrameCurrentDropIndex = -1;
+let gftCarouselScrollBound = false;
+let gftTimelineScrollBound = false;
+let gftAutoScrollVelocity = 0;
+let gftAutoScrollFrame = null;
+const GFT_AUTO_SCROLL_EDGE = 48;
+
+function gftStartAutoScroll(preview) {
+    if (gftAutoScrollFrame || !preview) return;
+    const step = () => {
+        if (!gftAutoScrollVelocity) {
+            gftAutoScrollFrame = null;
+            return;
+        }
+        preview.scrollLeft += gftAutoScrollVelocity;
+        gftAutoScrollFrame = requestAnimationFrame(step);
+    };
+    gftAutoScrollFrame = requestAnimationFrame(step);
+}
+
+function gftStopAutoScroll() {
+    gftAutoScrollVelocity = 0;
+    if (gftAutoScrollFrame) {
+        cancelAnimationFrame(gftAutoScrollFrame);
+        gftAutoScrollFrame = null;
+    }
+}
+
+function gftHandleAutoScroll(event, preview, wrap) {
+    if (!preview || !wrap) return;
+    const bounds = wrap.getBoundingClientRect();
+    const leftZone = bounds.left + GFT_AUTO_SCROLL_EDGE;
+    const rightZone = bounds.right - GFT_AUTO_SCROLL_EDGE;
+
+    if (event.clientX <= leftZone) {
+        gftAutoScrollVelocity = -16;
+        gftStartAutoScroll(preview);
+    } else if (event.clientX >= rightZone) {
+        gftAutoScrollVelocity = 16;
+        gftStartAutoScroll(preview);
+    } else {
+        gftStopAutoScroll();
+    }
+}
+
+function setupGftCarouselScroll() {
+    if (gftCarouselScrollBound) return;
+    const preview = get('gft-image-preview');
+    if (!preview) return;
+    gftCarouselScrollBound = true;
+    preview.addEventListener('wheel', (event) => {
+        if (Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+        event.preventDefault();
+        preview.scrollLeft += event.deltaY;
+    }, { passive: false });
+}
+
+function setupGftTimelineScroll() {
+    if (gftTimelineScrollBound) return;
+    const timeline = get('gft-timeline');
+    if (!timeline) return;
+    gftTimelineScrollBound = true;
+    timeline.addEventListener('wheel', (event) => {
+        if (Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+        event.preventDefault();
+        timeline.scrollLeft += event.deltaY;
+    }, { passive: false });
+}
 let vtgTrimDragging = null;
 let vtgTrimDragStartX = 0;
 let vtgTrimDragInitialStart = 0;
@@ -84,7 +163,7 @@ export function applyVideoToGifOptionsToUI(options) {
 }
 
 function setupDropZone() {
-    const dropZone = get('video-to-gif-drop-zone');
+    const dropZone = get('gif-tools-drop-zone');
     if (!dropZone) return;
 
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -99,20 +178,27 @@ function setupDropZone() {
         dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
     });
 
-    dropZone.addEventListener('drop', handleDrop, false);
+    dropZone.addEventListener('drop', (e) => {
+        const files = Array.from(e.dataTransfer.files || []).map(f => f.path);
+        if (files.length === 0) return;
+        const images = files.filter(p => gftIsImage(p));
+        const video = files.find(p => gftIsVideo(p));
+        if (images.length > 0 && !video) {
+            gftHandleImageSelection(images);
+        } else if (video) {
+            handleFileSelection(video);
+        }
+    }, false);
+
     dropZone.addEventListener('click', async () => {
-        try {
-            const filePath = await window.api.selectFile({
-                filters: [{
-                    name: "Video",
-                    extensions: ["mp4", "mkv", "avi", "mov", "webm"]
-                }]
-            });
-            if (filePath) {
-                handleFileSelection(filePath);
-            }
-        } catch (err) {
-            if (window.api?.logError) window.api.logError('Error selecting file:', err); else console.error('Error selecting file:', err);
+        const paths = await gftSelectVideoOrImageFiles();
+        if (paths.length === 0) return;
+        const images = paths.filter(p => gftIsImage(p));
+        const video = paths.find(p => gftIsVideo(p));
+        if (images.length > 0 && !video) {
+            gftHandleImageSelection(images);
+        } else if (video) {
+            handleFileSelection(video);
         }
     });
 }
@@ -122,14 +208,6 @@ function preventDefaults(e) {
     e.stopPropagation();
 }
 
-function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-
-    if (files.length > 0) {
-        handleFileSelection(files[0].path);
-    }
-}
 
 async function loadVideoToGifFile(filePath) {
     currentVideoPath = filePath;
@@ -137,8 +215,10 @@ async function loadVideoToGifFile(filePath) {
     currentCrop = null;
     cropDrag = null;
 
-    const dropZone = get('video-to-gif-drop-zone');
-    const dashboard = get('video-to-gif-dashboard');
+    const dropZone = get('gif-tools-drop-zone');
+    const dashboard = get('gif-tools-dashboard');
+    gftSetMode('video');
+    gftClearFrames();
     if (dropZone) dropZone.classList.add('hidden');
     if (dashboard) dashboard.classList.remove('hidden');
 
@@ -216,8 +296,18 @@ function setupDashboard() {
             currentVideoMetadata = null;
             currentCrop = null;
             cropDrag = null;
-            get('video-to-gif-dashboard').classList.add('hidden');
-            get('video-to-gif-drop-zone').classList.remove('hidden');
+            gftClearFrames();
+            get('gif-tools-dashboard').classList.add('hidden');
+            get('gif-tools-drop-zone').classList.remove('hidden');
+        });
+    }
+
+    const addImagesBtn = get('vtg-add-images-btn');
+    if (addImagesBtn) {
+        addImagesBtn.addEventListener('click', async () => {
+            const paths = await gftSelectImageFiles();
+            if (paths.length === 0) return;
+            gftAppendFrames(paths);
         });
     }
 
@@ -271,7 +361,7 @@ function setupDashboard() {
     const addQueueBtn = get('vtg-add-queue-btn');
     if (addQueueBtn) {
         addQueueBtn.addEventListener('click', () => {
-            if (!currentVideoPath) return;
+            if (gftMode === 'video' && !currentVideoPath) return;
             fireConversion(false);
         });
     }
@@ -279,13 +369,25 @@ function setupDashboard() {
     const convertBtn = get('vtg-convert-btn');
     if (convertBtn) {
         convertBtn.addEventListener('click', () => {
-            if (!currentVideoPath) return;
+            if (gftMode === 'video' && !currentVideoPath) return;
+            if (gftMode === 'images' && gftFrames.length === 0) return;
             fireConversion(true);
         });
     }
+
+    setupGftGlobalTimingHandlers();
+    setupGftSortHandlers();
+    setupGftFrameCarouselDrag();
+    setupGftCarouselScroll();
+    setupGftTimelineScroll();
 }
 
 function fireConversion(startImmediately) {
+    if (gftMode === 'images') {
+        gftFireImageConversion();
+        return;
+    }
+
     const options = buildVideoToGifOptions();
 
     if (startImmediately) {
@@ -301,7 +403,7 @@ function fireConversion(startImmediately) {
 
         showView(progressView);
         toggleSidebar(true);
-        state.setLastActiveViewId('videoToGifDropZone');
+        state.setLastActiveViewId('gifToolsDropZone');
 
         // Clear values but do NOT show drop zone
         currentVideoPath = null;
@@ -318,7 +420,7 @@ function fireConversion(startImmediately) {
     } else {
         if (state.currentEditingQueueId !== null) {
             const item = state.encodingQueue.find(i => i.id === state.currentEditingQueueId);
-            if (item && item.taskType === 'video-to-gif') {
+            if (item && item.taskType === 'gif-tools') {
                 item.options = options;
                 item.name = options.input.split(/[\\/]/).pop();
                 if (item.status === 'failed' || item.status === 'pending') {
@@ -332,7 +434,7 @@ function fireConversion(startImmediately) {
                 updateQueueStatusUI();
             }
         } else {
-            addToQueue(options, 'video-to-gif');
+            addToQueue(options, 'gif-tools');
             showPopup('Added to Queue', 3000);
         }
 
@@ -347,8 +449,8 @@ function fireConversion(startImmediately) {
         currentVideoMetadata = null;
         currentCrop = null;
         cropDrag = null;
-        get('video-to-gif-dashboard').classList.add('hidden');
-        get('video-to-gif-drop-zone').classList.remove('hidden');
+        get('gif-tools-dashboard').classList.add('hidden');
+        get('gif-tools-drop-zone').classList.remove('hidden');
     }
 }
 
@@ -1030,4 +1132,588 @@ function renderCropRectFromCurrentCrop() {
     cropRectEl.style.top = `${top}px`;
     cropRectEl.style.width = `${width}px`;
     cropRectEl.style.height = `${height}px`;
+}
+
+// ─── GIF Image-Mode Helpers ───────────────────────────────────────────────────
+
+function gftIsImage(path) {
+    if (!path) return false;
+    const idx = path.toLowerCase().lastIndexOf('.');
+    return idx !== -1 && GIF_IMAGE_EXTENSIONS.has(path.toLowerCase().slice(idx));
+}
+
+function gftIsVideo(path) {
+    if (!path) return false;
+    const idx = path.toLowerCase().lastIndexOf('.');
+    return idx !== -1 && GIF_VIDEO_EXTENSIONS.has(path.toLowerCase().slice(idx));
+}
+
+async function gftSelectVideoOrImageFiles() {
+    if (typeof window.api?.selectFiles === 'function') {
+        try {
+            const paths = await window.api.selectFiles({
+                filters: [{ name: 'Video or Images', extensions: GIF_VIDEO_AND_IMAGE_EXTENSIONS }]
+            });
+            if (Array.isArray(paths) && paths.length > 0) return paths;
+            if (Array.isArray(paths)) return [];
+        } catch (err) {
+            if (window.api?.logError) window.api.logError('selectFiles failed for GIF tools', err); else console.error('selectFiles failed for GIF tools', err);
+            return await gftSelectSingleVideoOrImageFile();
+        }
+        return [];
+    }
+    return await gftSelectSingleVideoOrImageFile();
+}
+
+async function gftSelectImageFiles() {
+    const imageExtensions = Array.from(GIF_IMAGE_EXTENSIONS).map(ext => ext.replace('.', ''));
+    if (typeof window.api?.selectFiles === 'function') {
+        try {
+            const paths = await window.api.selectFiles({
+                filters: [{ name: 'Images', extensions: imageExtensions }]
+            });
+            if (Array.isArray(paths) && paths.length > 0) return paths.filter(p => gftIsImage(p));
+            if (Array.isArray(paths)) return [];
+        } catch (err) {
+            if (window.api?.logError) window.api.logError('selectFiles failed for GIF image picker', err); else console.error('selectFiles failed for GIF image picker', err);
+            return await gftSelectSingleImageFile(imageExtensions);
+        }
+        return [];
+    }
+    return await gftSelectSingleImageFile(imageExtensions);
+}
+
+async function gftSelectSingleVideoOrImageFile() {
+    try {
+        const single = await window.api.selectFile({
+            filters: [{ name: 'Video or Images', extensions: GIF_VIDEO_AND_IMAGE_EXTENSIONS }]
+        });
+        if (single) return [single];
+    } catch (err) {
+        if (window.api?.logError) window.api.logError('selectFile fallback failed for GIF tools', err); else console.error('selectFile fallback failed for GIF tools', err);
+    }
+    return [];
+}
+
+async function gftSelectSingleImageFile(imageExtensions) {
+    try {
+        const single = await window.api.selectFile({
+            filters: [{ name: 'Images', extensions: imageExtensions }]
+        });
+        if (single && gftIsImage(single)) return [single];
+    } catch (err) {
+        if (window.api?.logError) window.api.logError('selectFile fallback failed for GIF image picker', err); else console.error('selectFile fallback failed for GIF image picker', err);
+    }
+    return [];
+}
+
+function gftSetMode(mode) {
+    gftMode = mode;
+    const videoPreviewPanel = get('gft-video-preview-panel');
+    const videoTimePanel = get('gft-video-time-panel');
+    const videoSpeedGroup = get('gft-video-speed-group');
+    const imageEditorPanel = get('gft-image-editor-panel');
+    const addQueueBtn = get('vtg-add-queue-btn');
+    const addImagesBtn = get('vtg-add-images-btn');
+    const modeLabel = get('gft-mode-label');
+
+    const isVideo = mode === 'video';
+    if (videoPreviewPanel) videoPreviewPanel.classList.toggle('hidden', !isVideo);
+    if (videoTimePanel) videoTimePanel.classList.toggle('hidden', !isVideo);
+    if (videoSpeedGroup) videoSpeedGroup.classList.toggle('hidden', !isVideo);
+    if (imageEditorPanel) imageEditorPanel.classList.toggle('hidden', isVideo);
+    if (addQueueBtn) addQueueBtn.classList.toggle('hidden', !isVideo);
+    if (addImagesBtn) addImagesBtn.classList.toggle('hidden', isVideo);
+    if (modeLabel) modeLabel.textContent = isVideo ? 'Video to GIF mode' : 'Image sequence to GIF mode';
+}
+
+function gftHandleImageSelection(paths) {
+    if (!paths || paths.length === 0) return;
+    const dropZone = get('gif-tools-drop-zone');
+    const dashboard = get('gif-tools-dashboard');
+    gftSetMode('images');
+    if (dropZone) dropZone.classList.add('hidden');
+    if (dashboard) dashboard.classList.remove('hidden');
+    gftAppendFrames(paths);
+}
+
+function gftAppendFrames(paths) {
+    const existing = new Set(gftFrames.map(f => f.path));
+    paths.forEach(path => {
+        if (existing.has(path)) return;
+        const name = path.split(/[\\/]/).pop();
+        const extMatch = name.match(/\.([^.]+)$/);
+        const ext = extMatch ? extMatch[1].toLowerCase() : '';
+        gftFrames.push({ path, name, ext, dateAdded: Date.now(), durationMs: gftGlobalDelayMs });
+        existing.add(path);
+    });
+    gftRenderCarousel();
+    gftRenderTimeline();
+    gftUpdateImageCount();
+}
+
+function gftClearFrames(skipAnimation = true) {
+    gftFrames = [];
+    gftRenderCarousel(skipAnimation);
+    gftRenderTimeline();
+    gftUpdateImageCount();
+}
+
+function gftUpdateImageCount() {
+    const countEl = get('gft-image-count');
+    if (countEl) countEl.textContent = String(gftFrames.length);
+    const emptyEl = get('gft-preview-empty');
+    const hintEl = get('gft-reorder-hint');
+    if (emptyEl) emptyEl.classList.toggle('hidden', gftFrames.length > 0);
+    if (hintEl) hintEl.classList.toggle('hidden', gftFrames.length < 2);
+}
+
+function gftRenderCarousel(skipAnimation = false) {
+    const preview = get('gft-image-preview');
+    if (!preview) return;
+
+    const currentScroll = preview.scrollLeft;
+    const fragment = document.createDocumentFragment();
+    const itemMap = new Map();
+    preview.querySelectorAll('.image-preview-item').forEach(el => {
+        if (el.dataset.path) itemMap.set(el.dataset.path, el);
+        el.classList.remove('removing', 'dragging');
+        el.style.animation = 'none';
+        el.style.opacity = '1';
+        el.style.transform = 'none';
+    });
+
+    const createDropIndicator = (index) => {
+        const indicator = document.createElement('div');
+        indicator.className = 'image-drop-indicator';
+        indicator.dataset.index = String(index);
+        indicator.classList.remove('removing', 'drag-over');
+        return indicator;
+    };
+
+    fragment.appendChild(createDropIndicator(0));
+
+    gftFrames.forEach((frame, index) => {
+        let item = itemMap.get(frame.path);
+        const isNew = !item;
+
+        if (isNew) {
+            item = document.createElement('div');
+            item.className = 'image-preview-item';
+            item.dataset.path = frame.path;
+            item.title = frame.name;
+
+            const img = document.createElement('img');
+            img.className = 'image-preview-thumb';
+            img.src = window.api.convertFileSrc(frame.path);
+            img.alt = frame.name;
+            img.draggable = false;
+            img.loading = 'lazy';
+            img.decoding = 'async';
+
+            const fallback = document.createElement('div');
+            fallback.className = 'image-preview-fallback';
+            fallback.innerHTML = `
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <span>${frame.name}</span>
+            `;
+            fallback.style.display = 'none';
+
+            img.onerror = () => {
+                if (window.api?.logError) window.api.logError('[GIFTools] Failed to load frame image:', frame.path); else console.error('[GIFTools] Failed to load frame image:', frame.path);
+                img.style.display = 'none';
+                fallback.style.display = 'flex';
+            };
+
+            const caption = document.createElement('div');
+            caption.className = 'image-preview-caption';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'image-preview-remove';
+            removeBtn.title = 'Remove frame';
+            removeBtn.innerHTML = '&times;';
+
+            item.appendChild(img);
+            item.appendChild(fallback);
+            item.appendChild(removeBtn);
+            item.appendChild(caption);
+        }
+
+        const removeBtn = item.querySelector('.image-preview-remove');
+        if (removeBtn) {
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
+                gftRemoveFrame(index);
+            };
+        }
+
+        item.onmousedown = (e) => {
+            if (e.button !== 0) return;
+            if (e.target.closest('.image-preview-remove')) return;
+            gftFrameDragIndex = index;
+            const rect = item.getBoundingClientRect();
+            const ghost = item.cloneNode(true);
+            ghost.classList.add('drag-ghost');
+            ghost.style.position = 'fixed';
+            ghost.style.width = rect.width + 'px';
+            ghost.style.height = rect.height + 'px';
+            ghost.style.left = `${e.clientX - rect.width / 2}px`;
+            ghost.style.top = `${e.clientY - rect.height / 2}px`;
+            ghost.style.pointerEvents = 'none';
+            ghost.style.opacity = '0.75';
+            ghost.style.zIndex = '9999';
+            document.body.appendChild(ghost);
+            gftFrameDragGhost = ghost;
+            item.classList.add('dragging');
+            preview.classList.add('is-dragging');
+        };
+
+        item.onclick = () => {
+            if (gftFrameIsDragging) return;
+            const currentIndex = Number.parseInt(item.dataset.index, 10);
+            const frameInfo = gftFrames[currentIndex];
+            if (frameInfo && window.api?.openImageViewer) {
+                window.api.openImageViewer({ path: frameInfo.path, name: frameInfo.name });
+            }
+        };
+
+        item.dataset.index = String(index);
+        const captionEl = item.querySelector('.image-preview-caption');
+        if (captionEl) captionEl.textContent = String(index + 1);
+
+        if (isNew && !skipAnimation) {
+            item.style.animationDelay = `${index * 40}ms`;
+        } else {
+            item.style.animation = 'none';
+            item.style.opacity = '1';
+            item.style.transform = 'none';
+        }
+
+        fragment.appendChild(item);
+        fragment.appendChild(createDropIndicator(index + 1));
+    });
+
+    preview.replaceChildren(fragment);
+    gftUpdateImageCount();
+
+    requestAnimationFrame(() => {
+        preview.scrollLeft = currentScroll;
+    });
+}
+
+function gftRemoveFrame(index) {
+    const preview = get('gft-image-preview');
+    if (preview) {
+        const itemEl = preview.children[index * 2 + 1];
+        const nextIndicator = preview.children[index * 2 + 2];
+
+        if (itemEl) {
+            itemEl.classList.add('removing');
+            if (nextIndicator) nextIndicator.classList.add('removing');
+
+            setTimeout(() => {
+                gftFrames = gftFrames.filter((_, idx) => idx !== index);
+                gftRenderCarousel(true);
+                gftRenderTimeline();
+                gftUpdateImageCount();
+            }, 350);
+            return;
+        }
+    }
+
+    gftFrames = gftFrames.filter((_, idx) => idx !== index);
+    gftRenderCarousel(true);
+    gftRenderTimeline();
+    gftUpdateImageCount();
+}
+
+function setupGftFrameCarouselDrag() {
+    document.addEventListener('mousemove', (e) => {
+        if (gftFrameDragIndex === null || !gftFrameDragGhost) return;
+        gftFrameIsDragging = true;
+        gftFrameDragGhost.style.left = `${e.clientX - gftFrameDragGhost.offsetWidth / 2}px`;
+        gftFrameDragGhost.style.top = `${e.clientY - gftFrameDragGhost.offsetHeight / 2}px`;
+
+        const preview = get('gft-image-preview');
+        if (!preview) return;
+        const previewWrap = preview.closest('.image-preview-wrap');
+        const elements = document.elementsFromPoint(e.clientX, e.clientY);
+        let indicator = null;
+        for (const el of elements) {
+            if (el.classList.contains('image-drop-indicator')) { indicator = el; break; }
+            if (el.classList.contains('image-preview-item') && !el.classList.contains('dragging')) {
+                const rect = el.getBoundingClientRect();
+                const isRight = (e.clientX - rect.left) > rect.width / 2;
+                const idx = parseInt(el.dataset.index, 10);
+                if (!isNaN(idx)) {
+                    indicator = preview.querySelector(`.image-drop-indicator[data-index="${isRight ? idx + 1 : idx}"]`);
+                    break;
+                }
+            }
+        }
+        preview.querySelectorAll('.image-drop-indicator.drag-over').forEach(el => {
+            if (el !== indicator) el.classList.remove('drag-over');
+        });
+        if (indicator) {
+            indicator.classList.add('drag-over');
+            gftFrameCurrentDropIndex = parseInt(indicator.dataset.index, 10);
+        } else {
+            gftFrameCurrentDropIndex = -1;
+        }
+
+        gftHandleAutoScroll(e, preview, previewWrap);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (gftFrameDragGhost) { gftFrameDragGhost.remove(); gftFrameDragGhost = null; }
+        if (!gftFrameIsDragging || gftFrameDragIndex === null) {
+            gftFrameDragIndex = null;
+            gftFrameIsDragging = false;
+            gftFrameCurrentDropIndex = -1;
+            gftStopAutoScroll();
+            return;
+        }
+        const preview = get('gft-image-preview');
+        if (preview) {
+            preview.querySelectorAll('.image-preview-item.dragging').forEach(el => el.classList.remove('dragging'));
+            preview.classList.remove('is-dragging');
+            preview.querySelectorAll('.image-drop-indicator.drag-over').forEach(el => el.classList.remove('drag-over'));
+        }
+        gftStopAutoScroll();
+        const from = gftFrameDragIndex;
+        const to = gftFrameCurrentDropIndex;
+        if (!isNaN(from) && !isNaN(to) && to >= 0 && to !== from && to !== from + 1) {
+            const updated = gftFrames.slice();
+            const [moved] = updated.splice(from, 1);
+            const finalTo = to > from ? to - 1 : to;
+            updated.splice(finalTo, 0, moved);
+            gftFrames = updated;
+            gftRenderCarousel(true);
+            gftRenderTimeline();
+        }
+        gftFrameDragIndex = null;
+        gftFrameIsDragging = false;
+        gftFrameCurrentDropIndex = -1;
+    });
+}
+
+// ─── GIF Timeline (Premiere-like per-frame duration) ─────────────────────────
+
+const GFT_TIMELINE_PX_PER_100MS = 12; // pixels per 100ms of frame duration
+const GFT_MIN_FRAME_MS = 20;
+const GFT_MAX_FRAME_MS = 10000;
+const GFT_MIN_CLIP_PX = 44;
+const GFT_BASE_DURATION_PX = Math.round((GFT_MIN_FRAME_MS / 100) * GFT_TIMELINE_PX_PER_100MS);
+
+const gftDurationToClipWidth = (durationMs) => {
+    const scaled = Math.round((durationMs / 100) * GFT_TIMELINE_PX_PER_100MS);
+    return GFT_MIN_CLIP_PX + Math.max(0, scaled - GFT_BASE_DURATION_PX);
+};
+
+function gftRenderTimeline() {
+    const track = get('gft-timeline-track');
+    if (!track) return;
+    track.innerHTML = '';
+
+    if (gftFrames.length === 0) return;
+
+    gftFrames.forEach((frame, index) => {
+        const clipW = gftDurationToClipWidth(frame.durationMs);
+
+        const clip = document.createElement('div');
+        clip.className = 'gft-timeline-clip';
+        clip.dataset.index = String(index);
+        clip.style.width = clipW + 'px';
+        clip.title = `Frame ${index + 1}: ${frame.durationMs}ms`;
+
+        const thumb = document.createElement('img');
+        thumb.src = window.api.convertFileSrc(frame.path);
+        thumb.className = 'gft-timeline-thumb';
+        thumb.draggable = false;
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'gft-timeline-label';
+        labelEl.textContent = `${frame.durationMs}ms`;
+
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'gft-timeline-resize-handle';
+        resizeHandle.title = 'Drag to change duration';
+
+        clip.appendChild(thumb);
+        clip.appendChild(labelEl);
+        clip.appendChild(resizeHandle);
+        track.appendChild(clip);
+
+        // Resize drag
+        resizeHandle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            gftTimelineDragState = { index, startX: e.clientX, origDurationMs: frame.durationMs };
+
+            function onMove(ev) {
+                if (!gftTimelineDragState) return;
+                const dx = ev.clientX - gftTimelineDragState.startX;
+                const deltaMsRaw = (dx / GFT_TIMELINE_PX_PER_100MS) * 100;
+                const newMs = Math.round(Math.max(GFT_MIN_FRAME_MS, Math.min(GFT_MAX_FRAME_MS, gftTimelineDragState.origDurationMs + deltaMsRaw)));
+                gftFrames[gftTimelineDragState.index].durationMs = newMs;
+                // Live update just this clip width and label
+                const newW = gftDurationToClipWidth(newMs);
+                clip.style.width = newW + 'px';
+                labelEl.textContent = `${newMs}ms`;
+                clip.title = `Frame ${index + 1}: ${newMs}ms`;
+            }
+
+            function onUp() {
+                gftTimelineDragState = null;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    });
+}
+
+// ─── GIF Global Timing Controls ──────────────────────────────────────────────
+
+function setupGftGlobalTimingHandlers() {
+    const fpsInput = get('gft-global-fps');
+    const delayInput = get('gft-global-delay-ms');
+
+    if (fpsInput) {
+        fpsInput.addEventListener('input', () => {
+            const fps = Math.max(1, Math.min(60, parseInt(fpsInput.value) || 12));
+            const ms = Math.round(1000 / fps);
+            gftGlobalDelayMs = ms;
+            if (delayInput) delayInput.value = String(ms);
+            gftApplyGlobalDelay(ms);
+        });
+    }
+
+    if (delayInput) {
+        delayInput.addEventListener('input', () => {
+            const ms = Math.max(10, Math.min(5000, parseInt(delayInput.value) || 83));
+            gftGlobalDelayMs = ms;
+            const fps = Math.round(1000 / ms);
+            if (fpsInput) fpsInput.value = String(fps);
+            gftApplyGlobalDelay(ms);
+        });
+    }
+}
+
+function gftApplyGlobalDelay(ms) {
+    gftFrames.forEach(f => { f.durationMs = ms; });
+    gftRenderTimeline();
+}
+
+// ─── GIF Sort Handlers ────────────────────────────────────────────────────────
+
+function setupGftSortHandlers() {
+    const sortContainer = get('gft-sort-container');
+    const sortBtn = get('gft-sort-btn');
+    if (!sortContainer || !sortBtn) return;
+
+    sortBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.dropdown-container.open').forEach(d => {
+            if (d !== sortContainer) d.classList.remove('open');
+        });
+        sortContainer.classList.toggle('open');
+    });
+
+    sortContainer.addEventListener('click', (e) => {
+        const item = e.target.closest('.dropdown-item');
+        if (!item || !item.dataset.sort) return;
+        gftSortFrames(item.dataset.sort);
+        sortContainer.classList.remove('open');
+    });
+
+    window.addEventListener('click', () => sortContainer.classList.remove('open'));
+}
+
+function gftSortFrames(criteria) {
+    if (gftFrames.length === 0) return;
+    const sorted = gftFrames.slice();
+    switch (criteria) {
+        case 'name-asc': sorted.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })); break;
+        case 'name-desc': sorted.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' })); break;
+        case 'added-asc': sorted.sort((a, b) => (a.dateAdded || 0) - (b.dateAdded || 0)); break;
+        case 'added-desc': sorted.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0)); break;
+    }
+    gftFrames = sorted;
+    gftRenderCarousel(true);
+    gftRenderTimeline();
+}
+
+// ─── GIF Image Conversion ─────────────────────────────────────────────────────
+
+async function gftFireImageConversion() {
+    if (gftFrames.length === 0) {
+        showPopup('Add at least one image frame first.');
+        return;
+    }
+
+    const firstName = gftFrames[0].name.replace(/\.[^.]+$/, '');
+    let outputPath = await window.api.saveFile({
+        title: 'Save GIF',
+        defaultName: `${firstName}.gif`,
+        filters: [{ name: 'GIF', extensions: ['gif'] }]
+    });
+    if (!outputPath) return;
+    if (!outputPath.toLowerCase().endsWith('.gif')) outputPath += '.gif';
+
+    const convertBtn = get('vtg-convert-btn');
+    const convertBtnHtml = convertBtn ? convertBtn.innerHTML : '';
+    if (convertBtn) {
+        convertBtn.disabled = true;
+        convertBtn.innerHTML = `<span class="loader-shell" data-loader data-loader-size="18"></span> Converting...`;
+        const { renderLoaders } = await import('./ui-utils.js');
+        renderLoaders({ selector: '#vtg-convert-btn [data-loader]' });
+    }
+
+    try {
+        state.setLastActiveViewId('gifToolsDropZone');
+        const result = await window.api.imageToGif({
+            image_paths: gftFrames.map(f => f.path),
+            frame_durations_ms: gftFrames.map(f => f.durationMs),
+            output_path: outputPath,
+            width: parseInt(get('vtg-width')?.value || '480'),
+        });
+
+        if (!result) {
+            showPopup('Failed to create GIF.');
+            return;
+        }
+
+        gftClearFrames();
+        const dropZone = get('gif-tools-drop-zone');
+        const dashboard = get('gif-tools-dashboard');
+        if (dropZone && dashboard) {
+            dashboard.classList.add('hidden');
+            dropZone.classList.remove('hidden');
+        }
+
+        const completeTitle = get('complete-title');
+        const outputPathEl = get('output-path');
+        const completeView = get('complete-view');
+        const newEncodeBtn = get('new-encode-btn');
+
+        if (completeTitle) completeTitle.textContent = 'GIF Created!';
+        if (newEncodeBtn) newEncodeBtn.textContent = 'Create Another GIF';
+        if (outputPathEl) outputPathEl.textContent = result;
+        state.setCurrentOutputPath(result);
+        showView(completeView);
+    } catch (err) {
+        showPopup(`Failed to create GIF: ${err?.message || err}`);
+    } finally {
+        if (convertBtn) {
+            convertBtn.disabled = false;
+            convertBtn.innerHTML = convertBtnHtml;
+        }
+    }
 }

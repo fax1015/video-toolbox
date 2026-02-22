@@ -68,7 +68,7 @@ export function updateQueueProgress() {
         const action = item.taskType === 'trim' ? 'Trimming' :
             item.taskType === 'extract' ? 'Extracting' :
                 item.taskType === 'download' ? 'Downloading' :
-                    item.taskType === 'video-to-gif' ? 'Converting to GIF' : 'Encoding';
+                    item.taskType === 'gif-tools' ? 'Converting to GIF' : 'Encoding';
         statusEl.textContent = `${action}... ${progress}%`;
     }
     if (progressEl) progressEl.style.width = `${progress}%`;
@@ -110,7 +110,7 @@ function getTaskLabel(item) {
     if (item.taskType === 'trim') return 'Trim';
     if (item.taskType === 'extract') return 'Extract audio';
     if (item.taskType === 'download') return 'Download';
-    if (item.taskType === 'video-to-gif') return 'Convert to GIF';
+    if (item.taskType === 'gif-tools') return 'Convert to GIF';
     return 'Encode';
 }
 
@@ -149,7 +149,7 @@ export function renderQueue() {
                 ? (item.taskType === 'trim' ? `Trimming... ${item.progress}%` :
                     item.taskType === 'extract' ? `Extracting... ${item.progress}%` :
                         item.taskType === 'download' ? `Downloading... ${item.progress}%` :
-                            item.taskType === 'video-to-gif' ? `Converting... ${item.progress}%` :
+                            item.taskType === 'gif-tools' ? `Converting... ${item.progress}%` :
                                 `Encoding... ${item.progress}%`)
                 : null;
 
@@ -243,7 +243,7 @@ export function processQueue() {
         if (progressTitle) progressTitle.textContent = 'Downloading video...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
         window.api.downloadVideo(nextItem.options).catch(handleTaskError);
-    } else if (nextItem.taskType === 'video-to-gif') {
+    } else if (nextItem.taskType === 'gif-tools') {
         if (progressTitle) progressTitle.textContent = 'Converting to GIF...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
         window.api.videoToGif(nextItem.options).catch(handleTaskError);

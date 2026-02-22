@@ -82,6 +82,10 @@ window.api = {
         await initPromise;
         return invoke('video_to_gif', { options });
     },
+    imageToGif: async (options) => {
+        await initPromise;
+        return invoke('image_to_gif', { options });
+    },
     cancelEncode: () => invoke('cancel_encode'),
 
     // ==================== Media Analysis APIs ====================
@@ -131,6 +135,11 @@ window.api = {
         outputPath: options.outputPath,
         quality: options.quality,
         upscale: options.upscale
+    }),
+    pdfToImages: (options) => invoke('pdf_to_images', {
+        pdfPath: options.pdfPath,
+        outputDir: options.outputDir,
+        format: options.format,
     }),
 
     // ==================== Event APIs ====================
