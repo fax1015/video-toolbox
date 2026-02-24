@@ -11,13 +11,14 @@
   "author": "fax1015",
   "type": "commonjs",
   "scripts": {
-    "dev": "npm run sync-version && tauri dev",
-    "build": "npm run sync-version && tauri build",
+    "dev": "tauri dev",
+    "build": "npm run sync-version && npm run clean && tauri build",
     "tauri": "tauri",
-    "start": "npm run sync-version && tauri dev",
-    "package": "npm run sync-version && tauri build",
+    "start": "tauri dev",
+    "package": "tauri build",
     "make": "tauri build",
-    "sync-version": "node update-version.js"
+    "clean": "node scripts/clean-target.js",
+    "sync-version": "node scripts/update-version.js"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
