@@ -1,10 +1,22 @@
 // UI Utility Functions
 
-export const get = (id) => {
+export const get = (id, options = {}) => {
+    const { logMissing = true } = options;
     const el = document.getElementById(id);
-    if (!el) if (window.api?.logWarn) window.api.logWarn(`Element with ID "${id}" not found`); else console.warn(`Element with ID "${id}" not found`);
+    if (!el && logMissing) {
+        if (window.api?.logWarn) window.api.logWarn(`Element with ID "${id}" not found`); else console.warn(`Element with ID "${id}" not found`);
+    }
     return el;
 };
+
+export function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 const loaderTemplates = {
     bars: (size) => `
@@ -89,7 +101,18 @@ export function showPlaylistConfirm(title, count) {
     const popupButtons = get('popup-actions');
 
     return new Promise((resolve) => {
-        popupMessage.innerHTML = `Found Playlist: <strong>${title}</strong><br>(${count} videos)<br><br>How would you like to download?`;
+        popupMessage.replaceChildren();
+
+        popupMessage.append('Found Playlist: ');
+        const strong = document.createElement('strong');
+        strong.textContent = title || 'Untitled playlist';
+        popupMessage.appendChild(strong);
+        popupMessage.appendChild(document.createElement('br'));
+        popupMessage.append(`(${count} videos)`);
+        popupMessage.appendChild(document.createElement('br'));
+        popupMessage.appendChild(document.createElement('br'));
+        popupMessage.append('How would you like to download?');
+
         popupButtons.innerHTML = `
             <button id="popup-cancel-btn" class="secondary-btn popup-btn" style="flex: 0.5;">Cancel</button>
             <button id="popup-audio-btn" class="primary-btn popup-btn">Audio</button>
@@ -295,8 +318,8 @@ export function setupCustomSelects() {
 export function showView(view) {
     if (!view) return;
 
-    const trimVideoPreview = get('trim-video-preview');
-    const trimDashboard = get('trim-dashboard');
+    const trimVideoPreview = get('trim-video-preview', { logMissing: false });
+    const trimDashboard = get('trim-dashboard', { logMissing: false });
 
     if (trimVideoPreview && !trimVideoPreview.paused && view !== trimDashboard) {
         trimVideoPreview.pause();
@@ -312,7 +335,7 @@ export function showView(view) {
     ];
 
     allViews.forEach(id => {
-        const v = get(id);
+        const v = get(id, { logMissing: false });
         if (v) {
             v.classList.add('hidden');
             v.classList.remove('container-loaded');
@@ -567,6 +590,7 @@ export function renderAudioTracks(audioTracks) {
             if (audioBitrateSelect) audioBitrateSelect.disabled = true;
         } else {
             audioTrackList.innerHTML = audioTracks.map((track, index) => {
+                const trackName = escapeHtml(track.name);
                 // Only animate items that are newly added (index >= previous count)
                 const shouldAnimate = index >= previousCount;
                 const animStyle = shouldAnimate
@@ -575,7 +599,7 @@ export function renderAudioTracks(audioTracks) {
                 return `
                 <div class="track-item" style="${animStyle}">
                     <div class="track-item-info">
-                        <span class="track-title">${track.name}</span>
+                        <span class="track-title">${trackName}</span>
                         <span class="track-meta">${track.isSource ? 'Original Track' : 'External Audio'}</span>
                     </div>
                     <button class="remove-btn" onclick="window.removeAudioTrack(${index})">
@@ -601,6 +625,7 @@ export function renderSubtitleTracks(subtitleTracks) {
 
     animateAutoHeight(subtitleTrackList, () => {
         subtitleTrackList.innerHTML = subtitleTracks.map((track, index) => {
+            const trackName = escapeHtml(track.name);
             // Only animate items that are newly added
             const shouldAnimate = index >= previousCount;
             const animStyle = shouldAnimate
@@ -609,7 +634,7 @@ export function renderSubtitleTracks(subtitleTracks) {
             return `
             <div class="track-item" style="${animStyle}">
                 <div class="track-item-info">
-                    <span class="track-title">${track.name}</span>
+                    <span class="track-title">${trackName}</span>
                     <span class="track-meta">External Subtitle</span>
                 </div>
                 <button class="remove-btn" onclick="window.removeSubtitleTrack(${index})">

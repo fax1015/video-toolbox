@@ -1151,33 +1151,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (item && item.taskType === 'gif-tools') {
-            state.setCurrentEditingQueueId(id);
-            const vtgDashboard = get('gif-tools-dashboard');
-            showView(vtgDashboard);
-            resetNav();
-            const navVtg = get('nav-gif-tools');
-            if (navVtg) navVtg.classList.add('active');
-
-            await loadVideoToGif();
-            const { handleFileSelection, applyVideoToGifOptionsToUI } = await import('./modules/video-to-gif.js');
-
-            handleFileSelection(item.options.input).then(() => {
-                applyVideoToGifOptionsToUI(item.options);
-
-                const addQueueBtn = get('vtg-add-queue-btn');
-                if (addQueueBtn) {
-                    addQueueBtn.innerHTML = `
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                        </svg>
-                        Update Item
-                    `;
-                }
-            });
-            return;
-        }
-
         loadQueueItemToDashboard(id);
     };
 

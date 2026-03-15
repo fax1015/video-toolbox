@@ -8,6 +8,10 @@ let currentInspectorData = null;
 let currentInspectorFileType = null;
 let inspectorRawToggleBound = false;
 
+function getInspectorMetadataPanel() {
+    return get('inspector-metadata-panel', { logMissing: false });
+}
+
 function setupInspectorRawJsonToggle() {
     if (inspectorRawToggleBound) return;
 
@@ -26,70 +30,40 @@ function setupInspectorRawJsonToggle() {
 
 // Detect file type (video, audio, or image) from metadata
 function detectFileType(data) {
-    console.log('[DEBUG detectFileType] Input data:', JSON.stringify(data, null, 2));
-    
     if (!data) {
-        console.log('[DEBUG detectFileType] No data, returning unknown');
         return 'unknown';
     }
-    
+
     const format = data.format;
     const streams = data.streams;
-    
-    console.log('[DEBUG detectFileType] format:', format);
-    console.log('[DEBUG detectFileType] streams:', streams);
-    
+
     if (!format || !streams || streams.length === 0) {
-        console.log('[DEBUG detectFileType] Missing format or streams, returning unknown');
         return 'unknown';
     }
-    
+
     const formatName = format.format_name?.toLowerCase() || '';
-    console.log('[DEBUG detectFileType] formatName:', formatName);
-    
-    // Check for image formats
+
     const imageFormats = ['image', 'jpeg', 'jpg', 'png', 'bmp', 'gif', 'tiff', 'webp', 'heif', 'heic', 'avif'];
     const imageCodecs = ['mjpeg', 'jpeg', 'jpg', 'png', 'bmp', 'gif', 'tiff', 'webp', 'heif', 'heic', 'avif'];
-    
-    // Check format name
-    const formatMatch = imageFormats.some(f => formatName.includes(f));
-    console.log('[DEBUG detectFileType] formatName.includes check:', formatMatch, 'for formats:', imageFormats);
-    if (formatMatch) {
-        console.log('[DEBUG detectFileType] Detected as IMAGE from format name');
+
+    if (imageFormats.some(f => formatName.includes(f))) {
         return 'image';
     }
-    
-    // Check stream codecs
+
     for (const stream of streams) {
         const codecType = stream.codec_type;
         const codecName = stream.codec_name?.toLowerCase();
-        
-        console.log('[DEBUG detectFileType] Checking stream:', { codecType, codecName });
-        
-        if (codecType === 'video') {
-            const isImageCodec = codecName && imageCodecs.includes(codecName);
-            console.log('[DEBUG detectFileType] Video stream - isImageCodec:', isImageCodec, 'checking against:', imageCodecs);
-            if (isImageCodec) {
-                console.log('[DEBUG detectFileType] Detected as IMAGE from codec name');
-                return 'image';
-            }
+
+        if (codecType === 'video' && codecName && imageCodecs.includes(codecName)) {
+            return 'image';
         }
     }
-    
-    // Check for audio-only files (no video stream)
+
     const hasVideo = streams.some(s => s.codec_type === 'video');
-    console.log('[DEBUG detectFileType] hasVideo:', hasVideo);
     if (!hasVideo) {
-        const hasAudio = streams.some(s => s.codec_type === 'audio');
-        console.log('[DEBUG detectFileType] hasAudio:', hasAudio);
-        if (hasAudio) {
-            console.log('[DEBUG detectFileType] Detected as AUDIO');
-            return 'audio';
-        }
+        return streams.some(s => s.codec_type === 'audio') ? 'audio' : 'unknown';
     }
-    
-    // Default to video (for files with video streams)
-    console.log('[DEBUG detectFileType] Defaulting to VIDEO');
+
     return 'video';
 }
 
@@ -182,8 +156,6 @@ function renderStreamInfo(streams, format) {
 }
 
 function populateMetadataFields(data) {
-    console.log('[DEBUG populateMetadataFields] Called with data:', data);
-    
     const metaTitle = get('meta-title');
     const metaArtist = get('meta-artist');
     const metaAlbum = get('meta-album');
@@ -195,10 +167,7 @@ function populateMetadataFields(data) {
     const inspectorDuration = get('inspector-duration');
     const inspectorSize = get('inspector-size');
     const inspectorBitrate = get('inspector-bitrate');
-    const metadataPanel = document.querySelector('.settings-panel');
-    
-    console.log('[DEBUG populateMetadataFields] metadataPanel element:', metadataPanel);
-    console.log('[DEBUG populateMetadataFields] All .settings-panel elements:', document.querySelectorAll('.settings-panel'));
+    const metadataPanel = getInspectorMetadataPanel();
 
     // Reset metadata panel to visible by default (will be hidden for images after detection)
     if (metadataPanel) {
@@ -222,25 +191,16 @@ function populateMetadataFields(data) {
     // Detect file type based on format and streams
     const fileType = detectFileType(data);
     currentInspectorFileType = fileType;
-    console.log('[DEBUG populateMetadataFields] Detected fileType:', fileType);
-    
+
     // Show/hide metadata editor based on file type
-    // Images don't support standard metadata tags, only EXIF
     if (metadataPanel) {
-        console.log('[DEBUG populateMetadataFields] Setting metadataPanel.display for fileType:', fileType);
         if (fileType === 'image') {
-            // Hide metadata editor for images - they use EXIF instead
             metadataPanel.style.display = 'none';
-            console.log('[DEBUG populateMetadataFields] HIDING metadata panel (image detected)');
         } else {
-            // Show metadata editor for video and audio files
             metadataPanel.style.display = 'block';
-            console.log('[DEBUG populateMetadataFields] SHOWING metadata panel (non-image detected)');
         }
-    } else {
-        console.log('[DEBUG populateMetadataFields] WARNING: metadataPanel is null!');
     }
-    
+
     // Also handle save button visibility for images
     if (saveBtn) {
         saveBtn.disabled = fileType === 'image';
@@ -359,13 +319,9 @@ export async function loadInspectorFile(filePath) {
     renderLoaders({ selector: '#inspector-view [data-loader]' });
 
     try {
-        if (window.api?.logInfo) window.api.logInfo('[Inspector] Loading metadata for:', filePath); else console.log('[Inspector] Loading metadata for:', filePath);
-
         let data;
         try {
             data = await window.api.getMetadataFull(filePath);
-            if (window.api?.logInfo) window.api.logInfo('[Inspector] API call succeeded, data type:', typeof data); else console.log('[Inspector] API call succeeded, data type:', typeof data);
-            if (window.api?.logInfo) window.api.logInfo('[Inspector] Raw metadata response:', data); else console.log('[Inspector] Raw metadata response:', data);
         } catch (apiError) {
             if (window.api?.logError) window.api.logError('[Inspector] API call failed:', apiError); else console.error('[Inspector] API call failed:', apiError);
             if (inspectorContent) inspectorContent.textContent = 'Error loading metadata: ' + apiError.message;
@@ -374,31 +330,18 @@ export async function loadInspectorFile(filePath) {
         }
 
         if (!data) {
-            if (window.api?.logError) window.api.logError('[Inspector] No data returned'); else console.error('[Inspector] No data returned');
             if (inspectorContent) inspectorContent.textContent = 'Error: No data returned';
             showPopup('No metadata returned');
             return;
         }
 
-        if (window.api?.logInfo) window.api.logInfo('[Inspector] Has format:', !!data.format); else console.log('[Inspector] Has format:', !!data.format);
-        if (window.api?.logInfo) window.api.logInfo('[Inspector] Has streams:', !!data.streams); else console.log('[Inspector] Has streams:', !!data.streams);
-        if (data.streams) {
-            if (window.api?.logInfo) window.api.logInfo('[Inspector] Number of streams:', data.streams.length); else console.log('[Inspector] Number of streams:', data.streams.length);
-        }
-
-        // Note: data.error check removed - Tauri errors are thrown, not returned as objects
-        // The try-catch above handles errors properly
-
         currentInspectorData = data;
         populateMetadataFields(data);
-        if (window.api?.logInfo) window.api.logInfo('[Inspector] Metadata populated successfully'); else console.log('[Inspector] Metadata populated successfully');
         if (rawToggle && rawToggle.open && inspectorContent) {
             inspectorContent.textContent = JSON.stringify(data, null, 2);
         }
 
     } catch (e) {
-        // This catch block is now redundant since we handle errors in the inner try-catch
-        // Keeping it as a fallback for unexpected errors
         if (window.api?.logError) window.api.logError('[Inspector] Unexpected error:', e); else console.error('[Inspector] Unexpected error:', e);
         if (inspectorContent) inspectorContent.textContent = 'Error loading metadata: ' + (e.message || String(e));
     }
@@ -445,7 +388,7 @@ export function setupInspectorHandlers() {
         inspectorBackBtn.addEventListener('click', () => {
             showView(get('inspector-drop-zone'));
             // Reset metadata panel display when going back
-            const metadataPanel = document.querySelector('.settings-panel');
+            const metadataPanel = getInspectorMetadataPanel();
             if (metadataPanel) {
                 metadataPanel.style.display = 'block';
             }

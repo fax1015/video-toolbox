@@ -1,6 +1,6 @@
 // Audio Extractor Module
 
-import { get, showView, resetProgress, resetNav, toggleSidebar } from './ui-utils.js';
+import { get, showPopup, showView, resetProgress, resetNav, toggleSidebar } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue } from './queue.js';
 

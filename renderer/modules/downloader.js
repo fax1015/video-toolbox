@@ -2,7 +2,7 @@
 
 import { get, showPopup, showView, showPlaylistConfirm, formatDurationFromSeconds, formatBytes, sanitizeFilename, resetNav, toggleSidebar, renderLoaders, animateAutoHeight } from './ui-utils.js';
 import * as state from './state.js';
-import { addToQueue, updateQueueUI, updateQueueStatusUI, processQueue } from './queue.js';
+import { addToQueue, updateQueueProgress, updateQueueUI, updateQueueStatusUI, processQueue } from './queue.js';
 
 export let currentDownloadUrl = '';
 export let currentVideoInfo = null;
@@ -564,7 +564,7 @@ export async function processVideoUrl(url) {
 
                                 let options = {
                                     input: finalName,
-                                    fileName: sanitizeFilename(finalName),
+                                    file_name: sanitizeFilename(finalName),
                                     url: entryUrl,
                                     thumbnail: entry.thumbnail || (entry.thumbnails && entry.thumbnails.length > 0 ? entry.thumbnails[entry.thumbnails.length - 1].url : null),
                                     channel: entry.uploader || entry.artist || entry.channel || (entry.user ? entry.user.username : null) || 'Unknown',
@@ -760,7 +760,7 @@ export function setupDownloaderHandlers() {
                 const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
                 if (item && data.percent !== undefined && data.percent !== null) {
                     item.progress = Math.round(parseFloat(data.percent));
-                    updateQueueUI();
+                    updateQueueProgress();
                 }
             }
         });
@@ -1010,8 +1010,8 @@ export function setupDownloaderHandlers() {
             if (state.currentEditingQueueId !== null) {
                 const item = state.encodingQueue.find(i => i.id === state.currentEditingQueueId);
                 if (item && item.taskType === 'download') {
-                    if (item.options.fileName && !options.fileName) {
-                        options.fileName = item.options.fileName;
+                    if (item.options.file_name && !options.file_name) {
+                        options.file_name = item.options.file_name;
                     }
 
                     item.options = options;

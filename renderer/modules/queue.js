@@ -1,6 +1,6 @@
 // Queue Management Module
 
-import { get, showPopup, showConfirm, animateAutoHeight } from './ui-utils.js';
+import { get, showPopup, showConfirm, animateAutoHeight, escapeHtml } from './ui-utils.js';
 import { toggleSidebar } from './ui-utils.js';
 import { MAX_QUEUE_SIZE, BUILT_IN_PRESETS } from '../constants.js';
 import * as state from './state.js';
@@ -67,8 +67,7 @@ export function updateQueueProgress() {
     if (statusEl) {
         const action = item.taskType === 'trim' ? 'Trimming' :
             item.taskType === 'extract' ? 'Extracting' :
-                item.taskType === 'download' ? 'Downloading' :
-                    item.taskType === 'gif-tools' ? 'Converting to GIF' : 'Encoding';
+                item.taskType === 'download' ? 'Downloading' : 'Encoding';
         statusEl.textContent = `${action}... ${progress}%`;
     }
     if (progressEl) progressEl.style.width = `${progress}%`;
@@ -110,7 +109,6 @@ function getTaskLabel(item) {
     if (item.taskType === 'trim') return 'Trim';
     if (item.taskType === 'extract') return 'Extract audio';
     if (item.taskType === 'download') return 'Download';
-    if (item.taskType === 'gif-tools') return 'Convert to GIF';
     return 'Encode';
 }
 
@@ -138,6 +136,7 @@ export function renderQueue() {
             }
             const currentStatus = item.status || item.state || 'pending';
             const taskLabel = getTaskLabel(item);
+            const itemName = escapeHtml(item.name);
             let statusText = `${formatStatusLabel(currentStatus)} · ${taskLabel}`;
 
             if (item.taskType === 'encode') {
@@ -149,8 +148,7 @@ export function renderQueue() {
                 ? (item.taskType === 'trim' ? `Trimming... ${item.progress}%` :
                     item.taskType === 'extract' ? `Extracting... ${item.progress}%` :
                         item.taskType === 'download' ? `Downloading... ${item.progress}%` :
-                            item.taskType === 'gif-tools' ? `Converting... ${item.progress}%` :
-                                `Encoding... ${item.progress}%`)
+                            `Encoding... ${item.progress}%`)
                 : null;
 
             // Only animate items that are newly added
@@ -164,7 +162,7 @@ export function renderQueue() {
                  style="${animStyle}"
                  onclick="window.loadQueueItem('${item.id}')">
                 <div class="queue-item-info">
-                    <div class="queue-item-name">${item.name}</div>
+                    <div class="queue-item-name">${itemName}</div>
                     <div class="queue-item-status" data-animate-number>${encodingStatus !== null ? encodingStatus : statusText}</div>
                 </div>
                 ${item.status === 'encoding' || item.status === 'completed' ? `
@@ -243,15 +241,19 @@ export function processQueue() {
         if (progressTitle) progressTitle.textContent = 'Downloading video...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
         window.api.downloadVideo(nextItem.options).catch(handleTaskError);
-    } else if (nextItem.taskType === 'gif-tools') {
-        if (progressTitle) progressTitle.textContent = 'Converting to GIF...';
-        if (progressFilename) progressFilename.textContent = nextItem.name;
-        window.api.videoToGif(nextItem.options).catch(handleTaskError);
     } else {
         if (progressTitle) progressTitle.textContent = 'Encoding in Progress';
         if (progressFilename) progressFilename.textContent = nextItem.name;
         window.api.startEncode(nextItem.options).catch(handleTaskError);
     }
+}
+
+function cancelQueueTask(item) {
+    if (item?.taskType === 'download') {
+        window.api.cancelDownload();
+        return;
+    }
+    window.api.cancelEncode();
 }
 
 export function updateQueueStatusUI() {
@@ -289,7 +291,10 @@ export function setupQueueHandlers() {
             const confirmClear = await showConfirm('Are you sure you want to clear all items from the queue?');
             if (!confirmClear) return;
 
-            if (state.isQueueRunning) window.api.cancelEncode();
+            if (state.isQueueRunning) {
+                const activeItem = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
+                cancelQueueTask(activeItem);
+            }
             state.setEncodingQueue([]);
             state.setCurrentlyEncodingItemId(null);
             state.setQueueRunning(false);
@@ -312,7 +317,7 @@ export function setupQueueHandlers() {
                         item.status = 'pending';
                         item.progress = 0;
                     }
-                    window.api.cancelEncode();
+                    cancelQueueTask(item);
                     state.setCurrentlyEncodingItemId(null);
                     toggleSidebar(false);
                 }
@@ -348,9 +353,9 @@ export function setupQueueHandlers() {
 
         // If currently encoding, cancel and reset
         if (id === state.currentlyEncodingItemId) {
-            window.api.cancelEncode();
-            state.setCurrentlyEncodingItemId(null);
             const item = state.encodingQueue[index];
+            cancelQueueTask(item);
+            state.setCurrentlyEncodingItemId(null);
             if (item) {
                 item.status = 'pending';
                 item.progress = 0;

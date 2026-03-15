@@ -1,9 +1,7 @@
 // Video to GIF Module
 
-import { get, showView, showPopup, updateTextContent, resetNav, toggleSidebar } from './ui-utils.js';
+import { get, showView, showPopup, updateTextContent, toggleSidebar } from './ui-utils.js';
 import * as state from './state.js';
-import { addToQueue } from './queue.js';
-import { processQueue, updateQueueStatusUI, updateQueueUI } from './queue.js';
 
 import { timeStringToSeconds, secondsToTimeString, formatDisplayTime } from './trimmer.js';
 
@@ -358,20 +356,12 @@ function setupDashboard() {
         });
     }
 
-    const addQueueBtn = get('vtg-add-queue-btn');
-    if (addQueueBtn) {
-        addQueueBtn.addEventListener('click', () => {
-            if (gftMode === 'video' && !currentVideoPath) return;
-            fireConversion(false);
-        });
-    }
-
     const convertBtn = get('vtg-convert-btn');
     if (convertBtn) {
         convertBtn.addEventListener('click', () => {
             if (gftMode === 'video' && !currentVideoPath) return;
             if (gftMode === 'images' && gftFrames.length === 0) return;
-            fireConversion(true);
+            fireConversion();
         });
     }
 
@@ -382,76 +372,38 @@ function setupDashboard() {
     setupGftTimelineScroll();
 }
 
-function fireConversion(startImmediately) {
+function fireConversion() {
     if (gftMode === 'images') {
         gftFireImageConversion();
         return;
     }
 
     const options = buildVideoToGifOptions();
+    state.setVideoToGifing(true);
+    state.setEncodingState(true);
 
-    if (startImmediately) {
-        state.setVideoToGifing(true);
-        state.setEncodingState(true);
+    const progressTitle = get('progress-title');
+    const progressFilename = get('progress-filename');
+    const progressView = get('progress-view');
 
-        const progressTitle = get('progress-title');
-        const progressFilename = get('progress-filename');
+    if (progressTitle) progressTitle.textContent = 'Converting to GIF...';
+    if (progressFilename) progressFilename.textContent = currentVideoPath.split(/[\\/]/).pop();
+
+    showView(progressView);
+    toggleSidebar(true);
+    state.setLastActiveViewId('gifToolsDropZone');
+
+    currentVideoPath = null;
+    currentVideoMetadata = null;
+
+    window.api.videoToGif(options).catch(e => {
+        if (window.api?.logError) window.api.logError('Video to GIF error:', e); else console.error('Video to GIF error:', e);
+        state.setEncodingState(false);
+        state.setVideoToGifing(false);
         const progressView = get('progress-view');
-
-        if (progressTitle) progressTitle.textContent = 'Converting to GIF...';
-        if (progressFilename) progressFilename.textContent = currentVideoPath.split(/[\\/]/).pop();
-
-        showView(progressView);
-        toggleSidebar(true);
-        state.setLastActiveViewId('gifToolsDropZone');
-
-        // Clear values but do NOT show drop zone
-        currentVideoPath = null;
-        currentVideoMetadata = null;
-
-        window.api.videoToGif(options).catch(e => {
-            if (window.api?.logError) window.api.logError('Video to GIF error:', e); else console.error('Video to GIF error:', e);
-            state.setEncodingState(false);
-            state.setVideoToGifing(false);
-            const progressView = get('progress-view');
-            if (progressView) progressView.classList.add('hidden');
-            showPopup(`Error starting GIF conversion: ${e}`);
-        });
-    } else {
-        if (state.currentEditingQueueId !== null) {
-            const item = state.encodingQueue.find(i => i.id === state.currentEditingQueueId);
-            if (item && item.taskType === 'gif-tools') {
-                item.options = options;
-                item.name = options.input.split(/[\\/]/).pop();
-                if (item.status === 'failed' || item.status === 'pending') {
-                    item.status = 'pending';
-                    item.state = 'pending';
-                    item.progress = 0;
-                    item.error = null;
-                }
-                state.setCurrentEditingQueueId(null);
-                updateQueueUI();
-                updateQueueStatusUI();
-            }
-        } else {
-            addToQueue(options, 'gif-tools');
-            showPopup('Added to Queue', 3000);
-        }
-
-        const queueView = get('queue-view');
-        const navQueue = get('nav-queue');
-        showView(queueView);
-        resetNav();
-        if (navQueue) navQueue.classList.add('active');
-
-        // Clear values and return to drop zone only for queue
-        currentVideoPath = null;
-        currentVideoMetadata = null;
-        currentCrop = null;
-        cropDrag = null;
-        get('gif-tools-dashboard').classList.add('hidden');
-        get('gif-tools-drop-zone').classList.remove('hidden');
-    }
+        if (progressView) progressView.classList.add('hidden');
+        showPopup(`Error starting GIF conversion: ${e}`);
+    });
 }
 
 function buildVideoToGifOptions() {
@@ -1213,7 +1165,6 @@ function gftSetMode(mode) {
     const videoTimePanel = get('gft-video-time-panel');
     const videoSpeedGroup = get('gft-video-speed-group');
     const imageEditorPanel = get('gft-image-editor-panel');
-    const addQueueBtn = get('vtg-add-queue-btn');
     const addImagesBtn = get('vtg-add-images-btn');
     const modeLabel = get('gft-mode-label');
 

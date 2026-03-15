@@ -33,12 +33,12 @@ function getPresetSettingsFromUI() {
         preset: options.preset,
         resolution: options.resolution,
         fps: options.fps,
-        rateMode: options.rateMode,
+        rateMode: options.rate_mode,
         crf: options.crf,
         bitrate: options.bitrate,
-        twoPass: options.twoPass,
-        audioCodec: options.audioCodec,
-        audioBitrate: options.audioBitrate
+        twoPass: options.two_pass,
+        audioCodec: options.audio_codec,
+        audioBitrate: options.audio_bitrate
     };
 }
 
@@ -369,14 +369,14 @@ export function updateEstFileSize() {
 }
 
 export function updatePresetStatus() {
-    const currentSettings = getOptionsFromUI();
+    const currentSettings = getPresetSettingsFromUI();
     const presetSettings = state.currentPresetOriginalSettings;
 
     if (state.currentPresetUsed && presetSettings) {
         // Compare simplified versions of settings
         const simplifiedCurrent = JSON.stringify({
             format: currentSettings.format,
-            codec: currentSettings.codec.split('_')[0].replace('hevc', 'h265'),
+            codec: currentSettings.codec,
             preset: currentSettings.preset,
             resolution: currentSettings.resolution,
             crf: currentSettings.crf,
