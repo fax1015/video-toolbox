@@ -315,8 +315,235 @@ export function setupCustomSelects() {
     });
 }
 
+const fileDropZones = new Map();
+let nativeFileDropListenerPromise = null;
+let activeFileDropZone = null;
+let lastDropSignature = '';
+let lastDropTime = 0;
+
+export function getPathBasename(filePath) {
+    if (!filePath || typeof filePath !== 'string') return '';
+    return filePath.split(/[\\/]/).pop() || filePath;
+}
+
+function normalizeDroppedPaths(paths) {
+    if (!Array.isArray(paths)) return [];
+    const seen = new Set();
+    const normalized = [];
+
+    paths.forEach((path) => {
+        if (!path || typeof path !== 'string') return;
+        if (seen.has(path)) return;
+        seen.add(path);
+        normalized.push(path);
+    });
+
+    return normalized;
+}
+
+function pathsFromDataTransfer(dataTransfer) {
+    if (!dataTransfer) return [];
+    const paths = [];
+
+    if (dataTransfer.files?.length) {
+        Array.from(dataTransfer.files).forEach((file) => {
+            if (file?.path) {
+                paths.push(file.path);
+            } else if (file?.webkitRelativePath) {
+                paths.push(file.webkitRelativePath);
+            }
+        });
+    }
+
+    if (paths.length === 0 && dataTransfer.items?.length) {
+        Array.from(dataTransfer.items).forEach((item) => {
+            const file = item.kind === 'file' ? item.getAsFile?.() : null;
+            if (file?.path) paths.push(file.path);
+        });
+    }
+
+    return normalizeDroppedPaths(paths);
+}
+
+function isDropZoneAvailable(element) {
+    return Boolean(
+        element &&
+        element.isConnected &&
+        !element.classList.contains('hidden') &&
+        element.getClientRects().length > 0
+    );
+}
+
+function clearActiveFileDropZone() {
+    if (activeFileDropZone) {
+        const options = fileDropZones.get(activeFileDropZone);
+        activeFileDropZone.classList.remove(options?.hoverClass || 'drag-over');
+        activeFileDropZone = null;
+    }
+}
+
+export function clearFileDropZoneState() {
+    clearActiveFileDropZone();
+    fileDropZones.forEach((options, element) => {
+        element.classList.remove(options.hoverClass || 'drag-over');
+        element.__fileDropDepth = 0;
+    });
+}
+
+function setActiveFileDropZone(element) {
+    if (element === activeFileDropZone) return;
+    clearActiveFileDropZone();
+    if (!isDropZoneAvailable(element)) return;
+    const options = fileDropZones.get(element);
+    element.classList.add(options?.hoverClass || 'drag-over');
+    activeFileDropZone = element;
+}
+
+function clientPointFromTauriPosition(position) {
+    if (!position) return null;
+    const rawX = Number(position.x ?? position.X ?? 0);
+    const rawY = Number(position.y ?? position.Y ?? 0);
+    if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return null;
+
+    const scale = window.devicePixelRatio || 1;
+    return {
+        x: rawX / scale,
+        y: rawY / scale
+    };
+}
+
+function findFileDropZoneAt(position) {
+    const point = clientPointFromTauriPosition(position);
+    if (!point) return null;
+
+    const hit = document.elementFromPoint(point.x, point.y);
+    if (!hit) return null;
+
+    let node = hit;
+    while (node && node !== document.documentElement) {
+        if (fileDropZones.has(node) && isDropZoneAvailable(node)) {
+            return node;
+        }
+        node = node.parentElement;
+    }
+
+    return null;
+}
+
+function shouldSkipDuplicateDrop(paths) {
+    const signature = normalizeDroppedPaths(paths).join('\n');
+    const now = performance.now();
+    const isDuplicate = signature && signature === lastDropSignature && now - lastDropTime < 350;
+    lastDropSignature = signature;
+    lastDropTime = now;
+    return isDuplicate;
+}
+
+function dispatchFileDrop(element, paths, context) {
+    const options = fileDropZones.get(element);
+    if (!options || !isDropZoneAvailable(element)) return;
+
+    const normalized = normalizeDroppedPaths(paths);
+    if (normalized.length === 0) {
+        options.onEmptyDrop?.(context);
+        return;
+    }
+
+    if (shouldSkipDuplicateDrop(normalized)) return;
+    options.onDrop(normalized, context);
+}
+
+function handleNativeFileDropEvent(event) {
+    const payload = event?.payload;
+    if (!payload?.type) return;
+
+    if (payload.type === 'enter' || payload.type === 'over') {
+        const zone = findFileDropZoneAt(payload.position);
+        if (zone) {
+            setActiveFileDropZone(zone);
+        } else {
+            clearActiveFileDropZone();
+        }
+        return;
+    }
+
+    if (payload.type === 'leave') {
+        clearActiveFileDropZone();
+        return;
+    }
+
+    if (payload.type === 'drop') {
+        const zone = findFileDropZoneAt(payload.position) || activeFileDropZone;
+        clearActiveFileDropZone();
+        if (zone) {
+            dispatchFileDrop(zone, payload.paths || [], { source: 'tauri', event });
+        }
+    }
+}
+
+function ensureNativeFileDropListener() {
+    if (nativeFileDropListenerPromise || !window.api?.onDragDropEvent) return;
+    nativeFileDropListenerPromise = window.api.onDragDropEvent(handleNativeFileDropEvent).catch((err) => {
+        nativeFileDropListenerPromise = null;
+        if (window.api?.logWarn) window.api.logWarn('Native drag and drop listener failed:', err);
+        else console.warn('Native drag and drop listener failed:', err);
+    });
+}
+
+export function setupFileDropZone(element, options = {}) {
+    if (!element || typeof options.onDrop !== 'function') return;
+    if (fileDropZones.has(element)) return;
+
+    const config = {
+        hoverClass: 'drag-over',
+        ...options
+    };
+    fileDropZones.set(element, config);
+    element.__fileDropDepth = 0;
+
+    const preventDefaults = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = config.dropEffect || 'copy';
+    };
+
+    element.addEventListener('dragenter', (event) => {
+        preventDefaults(event);
+        element.__fileDropDepth = (element.__fileDropDepth || 0) + 1;
+        setActiveFileDropZone(element);
+    });
+
+    element.addEventListener('dragover', (event) => {
+        preventDefaults(event);
+        setActiveFileDropZone(element);
+    });
+
+    element.addEventListener('dragleave', (event) => {
+        preventDefaults(event);
+        element.__fileDropDepth = Math.max((element.__fileDropDepth || 1) - 1, 0);
+        if (element.__fileDropDepth === 0) {
+            element.classList.remove(config.hoverClass);
+            if (activeFileDropZone === element) activeFileDropZone = null;
+        }
+    });
+
+    element.addEventListener('drop', (event) => {
+        preventDefaults(event);
+        element.__fileDropDepth = 0;
+        if (activeFileDropZone === element) activeFileDropZone = null;
+        element.classList.remove(config.hoverClass);
+        const paths = pathsFromDataTransfer(event.dataTransfer);
+        if (paths.length === 0 && window.api?.onDragDropEvent) return;
+        dispatchFileDrop(element, paths, { source: 'html5', event });
+    });
+
+    ensureNativeFileDropListener();
+}
+
 export function showView(view) {
     if (!view) return;
+
+    clearFileDropZoneState();
 
     const trimVideoPreview = get('trim-video-preview', { logMissing: false });
     const trimDashboard = get('trim-dashboard', { logMissing: false });

@@ -1,6 +1,6 @@
 // Video to GIF Module
 
-import { get, showView, showPopup, updateTextContent, toggleSidebar } from './ui-utils.js';
+import { get, showView, showPopup, updateTextContent, toggleSidebar, setupFileDropZone } from './ui-utils.js';
 import * as state from './state.js';
 
 import { timeStringToSeconds, secondsToTimeString, formatDisplayTime } from './trimmer.js';
@@ -164,29 +164,21 @@ function setupDropZone() {
     const dropZone = get('gif-tools-drop-zone');
     if (!dropZone) return;
 
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, preventDefaults, false);
+    setupFileDropZone(dropZone, {
+        onDrop: (files) => {
+            if (files.length === 0) return;
+            const images = files.filter(p => gftIsImage(p));
+            const video = files.find(p => gftIsVideo(p));
+            if (images.length > 0 && !video) {
+                gftHandleImageSelection(images);
+            } else if (video) {
+                handleFileSelection(video);
+            } else {
+                showPopup('Drop a supported video or image file.');
+            }
+        },
+        onEmptyDrop: () => showPopup('Could not read the dropped file path.')
     });
-
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-        const files = Array.from(e.dataTransfer.files || []).map(f => f.path);
-        if (files.length === 0) return;
-        const images = files.filter(p => gftIsImage(p));
-        const video = files.find(p => gftIsVideo(p));
-        if (images.length > 0 && !video) {
-            gftHandleImageSelection(images);
-        } else if (video) {
-            handleFileSelection(video);
-        }
-    }, false);
 
     dropZone.addEventListener('click', async () => {
         const paths = await gftSelectVideoOrImageFiles();
@@ -199,11 +191,6 @@ function setupDropZone() {
             handleFileSelection(video);
         }
     });
-}
-
-function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
 }
 
 

@@ -1,6 +1,6 @@
 // Image to PDF Module
 
-import { get, showPopup, showView, renderLoaders, formatBytes, animateAutoHeight, updateTextContent } from './ui-utils.js';
+import { get, showPopup, showView, renderLoaders, formatBytes, animateAutoHeight, updateTextContent, setupFileDropZone } from './ui-utils.js';
 import * as state from './state.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff']);
@@ -1070,31 +1070,26 @@ export function setupImageToPdfHandlers() {
     const pdfExportBtn = get('pdf-tools-convert-btn');
 
     if (dropZone) {
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('drag-over');
-        });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-            const files = Array.from(e.dataTransfer.files || []).map((file) => file.path);
-            const images = normalizeImagePaths(files);
-            const pdf = files.find((path) => isSupportedPdf(path));
-            if (pdf) {
-                clearImages();
-                setPdfToolsMode('pdf-to-images');
-                setSelectedPdf(pdf);
-                showView(dashboard);
-                return;
-            }
-            handleImageSelection(images).then((didAdd) => {
-                if (didAdd) {
-                    setPdfToolsMode('images-to-pdf');
-                    setSelectedPdf(null);
+        setupFileDropZone(dropZone, {
+            onDrop: (files) => {
+                const images = normalizeImagePaths(files);
+                const pdf = files.find((path) => isSupportedPdf(path));
+                if (pdf) {
+                    clearImages();
+                    setPdfToolsMode('pdf-to-images');
+                    setSelectedPdf(pdf);
                     showView(dashboard);
+                    return;
                 }
-            });
+                handleImageSelection(images).then((didAdd) => {
+                    if (didAdd) {
+                        setPdfToolsMode('images-to-pdf');
+                        setSelectedPdf(null);
+                        showView(dashboard);
+                    }
+                });
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped file path.')
         });
         dropZone.addEventListener('click', async () => {
             const paths = await pickPdfToolsFiles();

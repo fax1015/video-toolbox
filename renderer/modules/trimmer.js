@@ -1,6 +1,6 @@
 // Video Trimmer Module
 
-import { get, showPopup, showView, updateTextContent, toggleSidebar } from './ui-utils.js';
+import { get, showPopup, showView, updateTextContent, toggleSidebar, setupFileDropZone } from './ui-utils.js';
 import { resetNav } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue, updateQueueUI } from './queue.js';
@@ -702,18 +702,15 @@ export function setupTrimmerHandlers() {
     const trimWaveformModeSpectrogram = get('trim-waveform-mode-spectrogram');
 
     if (trimDropZone) {
-        trimDropZone.addEventListener('dragover', (e) => { e.preventDefault(); trimDropZone.classList.add('drag-over'); });
-        trimDropZone.addEventListener('dragleave', () => trimDropZone.classList.remove('drag-over'));
-        trimDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            trimDropZone.classList.remove('drag-over');
-            const file = e.dataTransfer.files[0];
-            if (file) {
+        setupFileDropZone(trimDropZone, {
+            onDrop: ([filePath]) => {
+                if (!filePath) return;
                 showView(get('trim-dashboard'));
                 resetNav();
                 if (navTrim) navTrim.classList.add('active');
-                handleTrimFileSelection(file.path);
-            }
+                handleTrimFileSelection(filePath);
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped file path.')
         });
         trimDropZone.addEventListener('click', async () => {
             const path = await window.api.selectFile();

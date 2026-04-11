@@ -1,6 +1,6 @@
 // Audio Extractor Module
 
-import { get, showPopup, showView, resetProgress, resetNav, toggleSidebar } from './ui-utils.js';
+import { get, showPopup, showView, resetProgress, resetNav, toggleSidebar, setupFileDropZone } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue } from './queue.js';
 
@@ -150,22 +150,16 @@ export function setupExtractAudioHandlers() {
     }
 
     if (extractAudioDropZone) {
-        extractAudioDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            extractAudioDropZone.classList.add('drag-over');
-        });
-        extractAudioDropZone.addEventListener('dragleave', () => extractAudioDropZone.classList.remove('drag-over'));
-        extractAudioDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            extractAudioDropZone.classList.remove('drag-over');
-            const file = e.dataTransfer.files[0];
-            if (file) {
-                handleExtractFileSelection(file.path).then(() => {
+        setupFileDropZone(extractAudioDropZone, {
+            onDrop: ([filePath]) => {
+                if (!filePath) return;
+                handleExtractFileSelection(filePath).then(() => {
                     showView(get('extract-audio-dashboard'));
                     resetNav();
                     if (navExtractAudio) navExtractAudio.classList.add('active');
                 });
-            }
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped file path.')
         });
         extractAudioDropZone.addEventListener('click', async () => {
             const path = await window.api.selectFile();

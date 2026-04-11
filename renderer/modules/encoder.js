@@ -1,6 +1,6 @@
 // Video Encoder Module
 
-import { get, showPopup, showConfirm, showView, renderAudioTracks, renderSubtitleTracks, resetNav, toggleSidebar, animateAutoHeight } from './ui-utils.js';
+import { get, showPopup, showConfirm, showView, renderAudioTracks, renderSubtitleTracks, resetNav, toggleSidebar, animateAutoHeight, setupFileDropZone, getPathBasename } from './ui-utils.js';
 import * as state from './state.js';
 import { addToQueue, updateQueueUI, formatPresetName } from './queue.js';
 import { BUILT_IN_PRESETS } from '../constants.js';
@@ -572,6 +572,7 @@ export async function handleFolderSelection(folderPath) {
         if (navQueue) navQueue.classList.add('active');
     } catch (err) {
         if (window.api?.logError) window.api.logError('Error handling folder:', err); else console.error('Error handling folder:', err);
+        showPopup(`Could not read that folder: ${err?.message || err}`);
     }
 }
 
@@ -587,23 +588,13 @@ export function setupEncoderHandlers() {
     const removeChaptersBtn = get('remove-chapters-btn');
 
     if (dropZone) {
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('drag-over');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('drag-over');
-        });
-
-        dropZone.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-            const file = e.dataTransfer.files[0];
-            if (file) {
-                if (window.api?.logInfo) window.api.logInfo('File dropped:', file.path); else console.log('File dropped:', file.path);
-                handleFileSelection(file.path);
-            }
+        setupFileDropZone(dropZone, {
+            onDrop: ([filePath]) => {
+                if (!filePath) return;
+                if (window.api?.logInfo) window.api.logInfo('File dropped:', filePath); else console.log('File dropped:', filePath);
+                handleFileSelection(filePath);
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped file path.')
         });
 
         dropZone.addEventListener('click', async () => {
@@ -621,22 +612,11 @@ export function setupEncoderHandlers() {
     }
 
     if (folderDropZone) {
-        folderDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            folderDropZone.classList.add('drag-over');
-        });
-
-        folderDropZone.addEventListener('dragleave', () => {
-            folderDropZone.classList.remove('drag-over');
-        });
-
-        folderDropZone.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            folderDropZone.classList.remove('drag-over');
-            const folder = e.dataTransfer.files[0];
-            if (folder) {
-                handleFolderSelection(folder.path);
-            }
+        setupFileDropZone(folderDropZone, {
+            onDrop: ([folderPath]) => {
+                if (folderPath) handleFolderSelection(folderPath);
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped folder path.')
         });
 
         folderDropZone.addEventListener('click', async () => {
@@ -796,23 +776,13 @@ export function setupEncoderHandlers() {
             }
         });
 
-        subtitleDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            subtitleDropZone.classList.add('drag-over');
-        });
-
-        subtitleDropZone.addEventListener('dragleave', () => {
-            subtitleDropZone.classList.remove('drag-over');
-        });
-
-        subtitleDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            subtitleDropZone.classList.remove('drag-over');
-            const file = e.dataTransfer.files[0];
-            if (file) {
-                state.subtitleTracks.push({ path: file.path, name: file.name });
+        setupFileDropZone(subtitleDropZone, {
+            onDrop: ([filePath]) => {
+                if (!filePath) return;
+                state.subtitleTracks.push({ path: filePath, name: getPathBasename(filePath) });
                 renderSubtitleTracks(state.subtitleTracks);
-            }
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped subtitle file.')
         });
     }
 
@@ -824,22 +794,11 @@ export function setupEncoderHandlers() {
             }
         });
 
-        chapterImportZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            chapterImportZone.classList.add('drag-over');
-        });
-
-        chapterImportZone.addEventListener('dragleave', () => {
-            chapterImportZone.classList.remove('drag-over');
-        });
-
-        chapterImportZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            chapterImportZone.classList.remove('drag-over');
-            const file = e.dataTransfer.files[0];
-            if (file) {
-                handleChapterFile(file.path);
-            }
+        setupFileDropZone(chapterImportZone, {
+            onDrop: ([filePath]) => {
+                if (filePath) handleChapterFile(filePath);
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped chapters file.')
         });
     }
 

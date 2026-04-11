@@ -488,14 +488,26 @@ async fn select_files(app: tauri::AppHandle, filters: Option<Vec<Filter>>, _allo
 }
 
 #[tauri::command]
-async fn save_file(app: tauri::AppHandle, _filters: Option<Vec<Filter>>, default_path: Option<String>, _title: Option<String>) -> Result<Option<String>, String> {
-    info!("save_file called with default_path: {:?}", default_path);
+async fn save_file(app: tauri::AppHandle, filters: Option<Vec<Filter>>, default_name: Option<String>, title: Option<String>) -> Result<Option<String>, String> {
+    info!("save_file called with default_name: {:?}", default_name);
     
     use tauri_plugin_dialog::DialogExt;
-    
-    let result = app.dialog()
-        .file()
-        .set_file_name(default_path.unwrap_or_else(|| "output.pdf".to_string()))
+
+    let mut builder = app.dialog().file();
+
+    if let Some(dialog_title) = title {
+        builder = builder.set_title(dialog_title);
+    }
+
+    if let Some(f) = filters {
+        for filter in f {
+            let extensions: Vec<&str> = filter.extensions.iter().map(|s| s.as_str()).collect();
+            builder = builder.add_filter(filter.name, &extensions);
+        }
+    }
+
+    let result = builder
+        .set_file_name(default_name.unwrap_or_else(|| "output.pdf".to_string()))
         .blocking_save_file();
     
     Ok(result.map(|p| p.to_string()))

@@ -794,11 +794,66 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    async function openToolById(toolId) {
+        clearImageToPdf();
+        resetNav();
+
+        const activateNav = (primaryId, fallbackId = null) => {
+            const nav = get(primaryId, { logMissing: false }) || (fallbackId ? get(fallbackId, { logMissing: false }) : null);
+            if (nav) nav.classList.add('active');
+        };
+
+        switch (toolId) {
+            case 'converter':
+                activateNav('nav-video');
+                showView(dropZone);
+                break;
+            case 'folder':
+                activateNav('nav-folder');
+                showView(folderDropZone);
+                break;
+            case 'trim':
+                await loadTrimmer();
+                activateNav('nav-trim');
+                showView(trimDropZone);
+                break;
+            case 'extract-audio':
+                await loadExtractAudio();
+                activateNav('nav-extract-audio');
+                showView(extractAudioDropZone);
+                break;
+            case 'downloader': {
+                const { showDownloader } = await loadDownloader();
+                showDownloader();
+                break;
+            }
+            case 'inspector':
+                await loadInspector();
+                activateNav('nav-inspector');
+                showView(get('inspector-drop-zone'));
+                break;
+            case 'gif-tools':
+                await loadVideoToGif();
+                activateNav('nav-gif-tools');
+                showView(get('gif-tools-drop-zone'));
+                break;
+            case 'pdf-tools':
+                activateNav('nav-pdf-tools');
+                showView(get('pdf-tools-drop-zone'));
+                break;
+            default:
+                return false;
+        }
+
+        scheduleSidebarIndicatorUpdate();
+        return true;
+    }
+
     // Initialize modules
     setupCustomSelects();
     setupQueueHandlers();
     setupEncoderHandlers();
-    setupAppsHandlers();
+    setupAppsHandlers({ launchTool: openToolById });
     setupImageToPdfHandlers();
 
     // Navigation handlers

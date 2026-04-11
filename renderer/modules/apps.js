@@ -6,8 +6,11 @@ import { TOOL_REGISTRY, APP_SETTINGS_KEY } from '../constants.js';
 import { clearImages } from './image-to-pdf.js';
 
 const SIDEBAR_REORDER_HOLD_MS = 1000;
+let launchToolHandler = null;
 
-export function setupAppsHandlers() {
+export function setupAppsHandlers(options = {}) {
+    launchToolHandler = typeof options.launchTool === 'function' ? options.launchTool : null;
+
     const appsDashboard = get('apps-dashboard');
     const navApps = get('nav-apps');
 
@@ -204,7 +207,12 @@ function updatePinnedApps() {
     renderAppsGrid();
 }
 
-function launchTool(toolId) {
+async function launchTool(toolId) {
+    if (launchToolHandler) {
+        const handled = await launchToolHandler(toolId);
+        if (handled !== false) return;
+    }
+
     const tool = TOOL_REGISTRY.find(t => t.id === toolId);
     if (!tool) {
         if (window.api?.logError) window.api.logError('Tool not found:', toolId); else console.error('Tool not found:', toolId);

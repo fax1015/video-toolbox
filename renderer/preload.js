@@ -4,6 +4,60 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+async function onDragDropEvent(callback) {
+    const currentWebview = window.__TAURI__?.webview?.getCurrentWebview?.();
+    if (currentWebview?.onDragDropEvent) {
+        return currentWebview.onDragDropEvent(callback);
+    }
+
+    const currentWindow = window.__TAURI__?.window?.getCurrentWindow?.();
+    if (currentWindow?.onDragDropEvent) {
+        return currentWindow.onDragDropEvent(callback);
+    }
+
+    const listeners = await Promise.all([
+        listen('tauri://drag-enter', (event) => {
+            callback({
+                ...event,
+                payload: {
+                    type: 'enter',
+                    paths: event.payload?.paths || [],
+                    position: event.payload?.position
+                }
+            });
+        }),
+        listen('tauri://drag-over', (event) => {
+            callback({
+                ...event,
+                payload: {
+                    type: 'over',
+                    position: event.payload?.position
+                }
+            });
+        }),
+        listen('tauri://drag-drop', (event) => {
+            callback({
+                ...event,
+                payload: {
+                    type: 'drop',
+                    paths: event.payload?.paths || [],
+                    position: event.payload?.position
+                }
+            });
+        }),
+        listen('tauri://drag-leave', (event) => {
+            callback({
+                ...event,
+                payload: { type: 'leave' }
+            });
+        })
+    ]);
+
+    return () => {
+        listeners.forEach((unlisten) => unlisten());
+    };
+}
+
 // Track event listeners for cleanup and callback management
 const eventCallbacks = {
     'encode-progress': [],
@@ -55,6 +109,7 @@ window.api = {
     saveFile: (options = {}) => invoke('save_file', { filters: options.filters, defaultName: options.defaultName, title: options.title }),
     selectFolder: () => invoke('select_folder'),
     convertFileSrc: (path, options) => window.__TAURI__.core.convertFileSrc(path, options),
+    onDragDropEvent,
 
     // ==================== File System APIs ====================
     listFiles: (folderPath) => invoke('list_files', { directory: folderPath }),

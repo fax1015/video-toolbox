@@ -1,6 +1,6 @@
 // Media Inspector Module
 
-import { get, showPopup, formatBytes, formatDurationFromSeconds, renderLoaders } from './ui-utils.js';
+import { get, showPopup, formatBytes, formatDurationFromSeconds, renderLoaders, setupFileDropZone } from './ui-utils.js';
 import { showView } from './ui-utils.js';
 
 let currentInspectorFilePath = null;
@@ -361,26 +361,11 @@ export function setupInspectorHandlers() {
             if (filePath) loadInspectorFile(filePath);
         });
 
-        inspectorDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            inspectorDropZone.classList.add('drag-over');
-        });
-
-        inspectorDropZone.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            inspectorDropZone.classList.remove('drag-over');
-        });
-
-        inspectorDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            inspectorDropZone.classList.remove('drag-over');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                loadInspectorFile(files[0].path);
-            }
+        setupFileDropZone(inspectorDropZone, {
+            onDrop: ([filePath]) => {
+                if (filePath) loadInspectorFile(filePath);
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped file path.')
         });
     }
 
