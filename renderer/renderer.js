@@ -293,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropZone = get('drop-zone');
     const folderDropZone = get('folder-drop-zone');
     const extractAudioDropZone = get('extract-audio-drop-zone');
+    const convertAudioDropZone = get('convert-audio-drop-zone');
     const extractAudioDashboard = get('extract-audio-dashboard');
     const trimDropZone = get('trim-drop-zone');
     const trimDashboard = get('trim-dashboard');
@@ -339,6 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navFolder = get('nav-folder');
     const navTrim = get('nav-trim');
     const navExtractAudio = get('nav-extract-audio');
+    const navConvertAudio = get('nav-convert-audio');
     const navSettings = get('nav-settings');
     const navQueue = get('nav-queue');
     const navApps = get('nav-apps');
@@ -478,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (showBlobsCheckbox) state.appSettings.showBlobs = showBlobsCheckbox.checked;
         if (cpuThreadsInput) state.appSettings.cpuThreads = parseInt(cpuThreadsInput.value) || 0;
 
-        if (!state.appSettings.pinnedApps) state.appSettings.pinnedApps = ['converter', 'folder', 'trim', 'extract-audio'];
+        if (!state.appSettings.pinnedApps) state.appSettings.pinnedApps = ['converter', 'folder', 'trim', 'extract-audio', 'convert-audio'];
 
         localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(state.appSettings));
         applySettings();
@@ -819,9 +821,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'extract-audio':
                 await loadExtractAudio();
+                {
+                    const { setExtractToolMode } = await loadExtractAudio();
+                    setExtractToolMode('extract');
+                }
                 activateNav('nav-extract-audio');
                 showView(extractAudioDropZone);
                 break;
+            case 'convert-audio': {
+                const { setExtractToolMode } = await loadExtractAudio();
+                setExtractToolMode('convert');
+                activateNav('nav-convert-audio');
+                showView(get('convert-audio-drop-zone'));
+                break;
+            }
             case 'downloader': {
                 const { showDownloader } = await loadDownloader();
                 showDownloader();
@@ -912,10 +925,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (navExtractAudio) {
         navExtractAudio.addEventListener('click', async () => {
             clearImageToPdf();
-            await loadExtractAudio();
+            const { setExtractToolMode } = await loadExtractAudio();
+            setExtractToolMode('extract');
             resetNav();
             navExtractAudio.classList.add('active');
             showView(extractAudioDropZone);
+            scheduleSidebarIndicatorUpdate();
+        });
+    }
+
+    if (navConvertAudio) {
+        navConvertAudio.addEventListener('click', async () => {
+            clearImageToPdf();
+            const { setExtractToolMode } = await loadExtractAudio();
+            setExtractToolMode('convert');
+            resetNav();
+            navConvertAudio.classList.add('active');
+            showView(convertAudioDropZone);
             scheduleSidebarIndicatorUpdate();
         });
     }
@@ -1006,6 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Progress event handlers
     electron.onProgress((data) => {
+        if (data?.taskId && state.currentlyEncodingItemId && data.taskId !== state.currentlyEncodingItemId) return;
         // Ensure percent is an integer
         const percent = Math.round(data.percent) || 0;
 
@@ -1028,12 +1055,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     electron.onComplete((data) => {
+        if (data?.taskId && state.currentlyEncodingItemId && data.taskId !== state.currentlyEncodingItemId) return;
         state.setEncodingState(false);
         const wasExtracting = state.isExtracting;
+        const wasConvertingAudio = state.isConvertingAudio;
         const wasTrimming = state.isTrimming;
         const wasVideoToGifing = state.isVideoToGifing;
 
         state.setExtracting(false);
+        state.setConvertingAudio(false);
         state.setTrimming(false);
         state.setVideoToGifing(false);
 
@@ -1042,7 +1072,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (progressRing) progressRing.style.strokeDashoffset = 0;
 
         if (completeTitle) {
-            if (wasExtracting) completeTitle.textContent = 'Extraction Complete!';
+            if (wasConvertingAudio) completeTitle.textContent = 'Audio Conversion Complete!';
+            else if (wasExtracting) completeTitle.textContent = 'Extraction Complete!';
             else if (wasTrimming) completeTitle.textContent = 'Trim Complete!';
             else if (wasVideoToGifing) completeTitle.textContent = 'GIF Conversion Complete!';
             else completeTitle.textContent = 'Encoding Complete!';
@@ -1050,13 +1081,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const newEncodeBtn = get('new-encode-btn');
         if (newEncodeBtn) {
-            if (wasVideoToGifing) newEncodeBtn.textContent = 'Convert Another Video';
+            if (wasConvertingAudio) newEncodeBtn.textContent = 'Convert Another Audio File';
+            else if (wasExtracting) newEncodeBtn.textContent = 'Extract Another Audio Track';
+            else if (wasVideoToGifing) newEncodeBtn.textContent = 'Convert Another Video';
             else newEncodeBtn.textContent = 'Encode Another Video';
         }
 
-        if (state.appSettings.notifyOnComplete) {
-            const action = wasExtracting ? 'Extraction' : (wasTrimming ? 'Trim' : (wasVideoToGifing ? 'GIF Conversion' : 'Encoding'));
-            new Notification(action + ' Complete', { body: `File saved to: ${data.outputPath}` });
+        if (state.appSettings.notifyOnComplete && 'Notification' in window) {
+            const action = wasConvertingAudio ? 'Audio Conversion' : (wasExtracting ? 'Extraction' : (wasTrimming ? 'Trim' : (wasVideoToGifing ? 'GIF Conversion' : 'Encoding')));
+            const showNotification = () => {
+                try {
+                    new Notification(action + ' Complete', { body: `File saved to: ${data.outputPath}` });
+                } catch (err) {
+                    if (window.api?.logWarn) window.api.logWarn('Notification failed:', err);
+                }
+            };
+            if (Notification.permission === 'granted') {
+                showNotification();
+            } else if (Notification.permission !== 'denied') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') showNotification();
+                }).catch(err => {
+                    if (window.api?.logWarn) window.api.logWarn('Notification permission request failed:', err);
+                });
+            }
         }
 
         if (state.isQueueRunning && state.currentlyEncodingItemId !== null) {
@@ -1076,8 +1124,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     electron.onError((data) => {
+        if (data?.taskId && state.currentlyEncodingItemId && data.taskId !== state.currentlyEncodingItemId) return;
         state.setEncodingState(false);
         state.setExtracting(false);
+        state.setConvertingAudio(false);
         state.setTrimming(false);
         alert(`Error: ${data.message}`);
 
@@ -1129,6 +1179,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 showView(extractAudioDropZone);
                 resetNav();
                 if (navExtractAudio) navExtractAudio.classList.add('active');
+            } else if (state.lastActiveViewId === 'convertAudioDropZone') {
+                showView(convertAudioDropZone);
+                resetNav();
+                if (navConvertAudio) navConvertAudio.classList.add('active');
             } else if (state.lastActiveViewId === 'pdfToolsDropZone') {
                 const imageDropZone = get('pdf-tools-drop-zone');
                 clearImageToPdf();
@@ -1176,15 +1230,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (item && item.taskType === 'extract') {
+        if (item && (item.taskType === 'extract' || item.taskType === 'convert-audio')) {
             state.setCurrentEditingQueueId(id);
             const extractAudioDashboard = get('extract-audio-dashboard');
             showView(extractAudioDashboard);
             resetNav();
-            if (navExtractAudio) navExtractAudio.classList.add('active');
+            if (item.taskType === 'convert-audio') {
+                if (navConvertAudio) navConvertAudio.classList.add('active');
+            } else if (navExtractAudio) navExtractAudio.classList.add('active');
 
-            const { handleExtractFileSelection, updateExtractBitrateVisibility } = await loadExtractAudio();
+            const { handleExtractFileSelection, updateExtractBitrateVisibility, setExtractToolMode } = await loadExtractAudio();
+            setExtractToolMode(item.taskType === 'convert-audio' ? 'convert' : 'extract');
             handleExtractFileSelection(item.options.input, {
+                toolMode: item.taskType === 'convert-audio' ? 'convert' : 'extract',
                 format: item.options.format,
                 bitrate: item.options.bitrate,
                 sampleRate: item.options.sampleRate,

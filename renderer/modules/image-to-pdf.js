@@ -1041,11 +1041,18 @@ async function convertImagesToPdf() {
         const completeView = get('complete-view');
         const newEncodeBtn = get('new-encode-btn');
 
-        if (completeTitle) completeTitle.textContent = 'PDF Created!';
+        const finalOutputPath = typeof outputPathResult === 'string' ? outputPathResult : outputPathResult.outputPath;
+        const skipped = Array.isArray(outputPathResult?.skipped) ? outputPathResult.skipped : [];
+
+        if (completeTitle) completeTitle.textContent = skipped.length ? 'PDF Created with Skipped Images' : 'PDF Created!';
         if (newEncodeBtn) newEncodeBtn.textContent = 'Create Another PDF';
-        if (outputPathEl) outputPathEl.textContent = outputPathResult;
-        state.setCurrentOutputPath(outputPathResult);
+        if (outputPathEl) outputPathEl.textContent = finalOutputPath;
+        state.setCurrentOutputPath(finalOutputPath);
         showView(completeView);
+        if (skipped.length) {
+            showPopup(`Created PDF, but skipped ${skipped.length} image(s). Check the app log for details.`);
+            if (window.api?.logWarn) window.api.logWarn('Skipped image(s) while creating PDF:', skipped);
+        }
     } catch (err) {
         showPopup(`Failed to create PDF: ${err.message}`);
     } finally {

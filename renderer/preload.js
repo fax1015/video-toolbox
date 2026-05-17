@@ -129,6 +129,10 @@ window.api = {
         await initPromise;
         return invoke('extract_audio', { options });
     },
+    convertAudio: async (options) => {
+        await initPromise;
+        return invoke('convert_audio', { options });
+    },
     trimVideo: async (options) => {
         await initPromise;
         return invoke('trim_video', { options });
@@ -227,6 +231,10 @@ window.api = {
     },
     onDownloadError: (callback) => {
         eventCallbacks['download-error'].push(callback);
+        return callback;
+    },
+    onDownloadCancelled: (callback) => {
+        eventCallbacks['download-cancelled'].push(callback);
         return callback;
     },
 

@@ -71,6 +71,8 @@
                         <button class="nav-item" id="nav-trim" data-tool-id="trim" title="Trim Video"></button>
                         <button class="nav-item" id="nav-extract-audio" data-tool-id="extract-audio"
                             title="Extract Audio"></button>
+                        <button class="nav-item" id="nav-convert-audio" data-tool-id="convert-audio"
+                            title="Convert Audio"></button>
 
                         <button class="nav-item" id="nav-downloader" data-tool-id="downloader"
                             title="Video Downloader"></button>
@@ -144,6 +146,16 @@
                         <div class="icon-container" data-tool-id="extract-audio"></div>
                         <h2>Drop video to extract audio</h2>
                         <p>or click to browse files</p>
+                    </div>
+                </div>
+                <div id="convert-audio-drop-zone" class="drop-zone hidden">
+                    <div class="drop-zone-inner">
+                        <div class="icon-container" data-tool-id="convert-audio"></div>
+                        <h2>Drop audio to convert</h2>
+                        <p>or click to browse files</p>
+                        <div class="supported-formats">
+                            Supports MP3, M4A, AAC, FLAC, WAV, OGG, Opus
+                        </div>
                     </div>
                 </div>
                 <div id="gif-tools-drop-zone" class="drop-zone hidden">
@@ -798,13 +810,26 @@
                                 </select>
                             </div>
                             <div class="control-group" id="extract-bitrate-group">
-                                <label for="extract-audio-bitrate">Bitrate</label>
-                                <select id="extract-audio-bitrate">
+                                <label for="extract-audio-bitrate-slider">Bitrate: <span id="extract-audio-bitrate-value" data-animate-number>192 kbps</span></label>
+                                <select id="extract-audio-bitrate" class="replaced hidden" aria-hidden="true" tabindex="-1">
+                                    <option value="64k">64 kbps</option>
+                                    <option value="96k">96 kbps</option>
                                     <option value="128k">128 kbps</option>
+                                    <option value="160k">160 kbps</option>
                                     <option value="192k" selected>192 kbps</option>
+                                    <option value="224k">224 kbps</option>
                                     <option value="256k">256 kbps</option>
+                                    <option value="288k">288 kbps</option>
                                     <option value="320k">320 kbps</option>
                                 </select>
+                                <input type="range" id="extract-audio-bitrate-slider" class="stepped-slider" min="0" max="8" step="1" value="4">
+                                <div class="stepped-slider-labels" aria-hidden="true">
+                                    <span>64</span>
+                                    <span>128</span>
+                                    <span>192</span>
+                                    <span>256</span>
+                                    <span>320</span>
+                                </div>
                             </div>
                             <div class="control-group">
                                 <label for="extract-audio-sample-rate">Sample Rate</label>
@@ -991,6 +1016,13 @@
                                 <div class="control-group">
                                     <label for="trim-end">End</label>
                                     <input type="text" id="trim-end" placeholder="00:00:00.00" value="00:00:00.00">
+                                </div>
+                                <div class="control-group">
+                                    <label for="trim-mode">Mode</label>
+                                    <select id="trim-mode">
+                                        <option value="fast" selected>Fast</option>
+                                        <option value="accurate">Accurate</option>
+                                    </select>
                                 </div>
                             </div>
                             <div class="trim-info-stats"

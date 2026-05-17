@@ -472,6 +472,8 @@ export async function loadTrimQueueItem(item) {
     );
 
     state.setTrimTime(state.trimDurationSeconds, startSeconds, endSeconds);
+    const trimModeSelect = get('trim-mode');
+    if (trimModeSelect && item.options.trim_mode) trimModeSelect.value = item.options.trim_mode;
 
     // Force update of timeline and file size with correct bitrate and trim times
     updateTrimTimelineVisual();
@@ -783,11 +785,14 @@ export function setupTrimmerHandlers() {
             syncTrimInputsFromVisual();
 
             const outputFolderInput = get('output-folder');
+            const trimModeSelect = get('trim-mode');
             const options = {
                 input: state.trimFilePath,
                 start_seconds: state.trimStartSeconds,
                 end_seconds: state.trimEndSeconds,
                 output_folder: outputFolderInput ? outputFolderInput.value : '',
+                overwrite_files: !!state.appSettings.overwriteFiles,
+                trim_mode: trimModeSelect ? trimModeSelect.value : 'fast',
                 originalFileBitrate: state.originalFileBitrate || 0
             };
 
@@ -830,6 +835,7 @@ export function setupTrimmerHandlers() {
             const progressFilename = get('progress-filename');
             const progressView = get('progress-view');
             const outputFolderInput = get('output-folder');
+            const trimModeSelect = get('trim-mode');
 
             if (progressTitle) progressTitle.textContent = 'Trimming video...';
             if (progressFilename) progressFilename.textContent = state.trimFilePath.split(/[\\/]/).pop();
@@ -843,6 +849,8 @@ export function setupTrimmerHandlers() {
                 start_seconds: state.trimStartSeconds,
                 end_seconds: state.trimEndSeconds,
                 output_folder: outputFolderInput ? outputFolderInput.value : '',
+                overwrite_files: !!state.appSettings.overwriteFiles,
+                trim_mode: trimModeSelect ? trimModeSelect.value : 'fast',
                 work_priority: state.appSettings.workPriority || 'normal'
             }).catch(e => {
                 if (window.api?.logError) window.api.logError('Trim video error:', e); else console.error('Trim video error:', e);

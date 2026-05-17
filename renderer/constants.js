@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS = {
     skeuoMode: false,
     cpuThreads: 0,
     waitForIndexing: true,
-    pinnedApps: ['converter', 'folder', 'trim', 'extract-audio']
+    pinnedApps: ['converter', 'folder', 'trim', 'extract-audio', 'convert-audio']
 };
 
 export const ACCENT_COLORS = {
@@ -41,7 +41,7 @@ export const BUILT_IN_PRESETS = {
     'web-discord-small': { label: 'Discord (Small)', format: 'mp4', codec: 'h264', preset: 'medium', crf: 30, resolution: '480p', fps: '30', audioCodec: 'aac', audioBitrate: '64k', twoPass: false },
     'web-social-720p': { label: 'Social Media 720p', format: 'mp4', codec: 'h264', preset: 'medium', crf: 24, resolution: '720p', fps: '30', audioCodec: 'aac', audioBitrate: '128k', twoPass: false },
     'web-email-360p': { label: 'Email / Small 360p', format: 'mp4', codec: 'h264', preset: 'veryfast', crf: 32, resolution: '360p', fps: '24', audioCodec: 'aac', audioBitrate: '64k', twoPass: false },
-    'web-youtube-4k': { label: 'YouTube 4K', format: 'mp4', codec: 'vp9', preset: 'medium', crf: 28, resolution: '2160p', fps: '60', audioCodec: 'opus', audioBitrate: '320k', twoPass: false },
+    'web-youtube-4k': { label: 'YouTube 4K', format: 'webm', codec: 'vp9', preset: 'medium', crf: 28, resolution: '2160p', fps: '60', audioCodec: 'opus', audioBitrate: '320k', twoPass: false },
 
     // Devices
     'device-old-phone-480p': { label: 'Old Phone 480p', format: 'mp4', codec: 'h264', preset: 'fast', crf: 24, resolution: '480p', fps: '30', audioCodec: 'aac', audioBitrate: '128k', twoPass: false },
@@ -92,6 +92,15 @@ export const TOOL_REGISTRY = [
         icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>`,
         viewId: 'extract-audio-drop-zone',
         navId: 'nav-extract-audio',
+        action: 'view'
+    },
+    {
+        id: 'convert-audio',
+        name: 'Convert Audio',
+        description: 'Convert audio files between MP3, AAC, FLAC, WAV, OGG, and Opus.',
+        icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"></path><path d="M3 21v-5h5"></path><path d="M3 12A9 9 0 0 1 18.4 5.6L21 8"></path><path d="M21 3v5h-5"></path></svg>`,
+        viewId: 'convert-audio-drop-zone',
+        navId: 'nav-convert-audio',
         action: 'view'
     },
     {

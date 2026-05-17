@@ -737,6 +737,7 @@ export function setupDownloaderHandlers() {
     // Register IPC callbacks
     if (window.api) {
         window.api.onDownloadProgress((data) => {
+            if (data?.taskId && state.currentlyEncodingItemId && data.taskId !== state.currentlyEncodingItemId) return;
             const dlProgressRing = get('dl-progress-ring');
             const dlProgressPercent = get('dl-progress-percent');
             const dlSpeed = get('dl-speed');
@@ -766,6 +767,7 @@ export function setupDownloaderHandlers() {
         });
 
         window.api.onDownloadComplete((message) => {
+            if (message?.taskId && state.currentlyEncodingItemId && message.taskId !== state.currentlyEncodingItemId) return;
             const dlCompleteView = get('dl-complete-view');
             const dlOutputPath = get('dl-output-path');
             const dlUrlInput = get('dl-url');
@@ -795,6 +797,7 @@ export function setupDownloaderHandlers() {
         });
 
         window.api.onDownloadError((error) => {
+            if (error?.taskId && state.currentlyEncodingItemId && error.taskId !== state.currentlyEncodingItemId) return;
             if (state.isQueueRunning && state.currentlyEncodingItemId !== null) {
                 const item = state.encodingQueue.find(i => i.id === state.currentlyEncodingItemId);
                 if (item) {
@@ -1004,7 +1007,8 @@ export function setupDownloaderHandlers() {
                 video_codec: dlVideoCodecSelect ? dlVideoCodecSelect.value : 'copy',
                 audio_format: dlAudioFormatSelect ? dlAudioFormatSelect.value : 'mp3',
                 audio_bitrate: dlAudioBitrateSelect ? dlAudioBitrateSelect.value : '192k',
-                output_path: get('output-folder')?.value || ''
+                output_path: get('output-folder')?.value || '',
+                overwrite_files: !!state.appSettings.overwriteFiles
             };
 
             if (state.currentEditingQueueId !== null) {

@@ -42,6 +42,7 @@ export let isEncoding = false;
 export let isCancelled = false;
 export let lastActiveViewId = null;
 export let isExtracting = false;
+export let isConvertingAudio = false;
 export let isTrimming = false;
 export let isVideoToGifing = false;
 export let originalFileBitrate = 0;
@@ -60,6 +61,10 @@ export function setLastActiveViewId(id) {
 
 export function setExtracting(extracting) {
     isExtracting = extracting;
+}
+
+export function setConvertingAudio(converting) {
+    isConvertingAudio = converting;
 }
 
 export function setTrimming(trimming) {

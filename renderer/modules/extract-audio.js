@@ -5,6 +5,69 @@ import * as state from './state.js';
 import { addToQueue } from './queue.js';
 
 let extractFilePath = null;
+let audioToolMode = 'extract';
+const AUDIO_FILE_FILTERS = [
+    { name: 'Audio Files', extensions: ['mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus'] },
+    { name: 'Media Files', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus'] }
+];
+const VIDEO_FILE_FILTERS = [
+    { name: 'Video Files', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'm4v'] },
+    { name: 'Media Files', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'm4v', 'mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus'] }
+];
+const BITRATE_STEPS = ['64k', '96k', '128k', '160k', '192k', '224k', '256k', '288k', '320k'];
+const BITRATE_LABELS = ['64 kbps', '96 kbps', '128 kbps', '160 kbps', '192 kbps', '224 kbps', '256 kbps', '288 kbps', '320 kbps'];
+
+function setAudioToolMode(mode) {
+    audioToolMode = mode === 'convert' ? 'convert' : 'extract';
+    const title = document.querySelector('#extract-audio-dashboard .panel-title');
+    const actionBtn = get('extract-audio-btn');
+    if (title) title.textContent = audioToolMode === 'convert' ? 'Audio Conversion' : 'Audio Output';
+    if (actionBtn) {
+        actionBtn.innerHTML = audioToolMode === 'convert' ? `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
+            </svg>
+            Convert Audio
+        ` : `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
+            </svg>
+            Extract Audio
+        `;
+    }
+}
+
+function syncBitrateSliderFromSelect() {
+    const select = get('extract-audio-bitrate');
+    const slider = get('extract-audio-bitrate-slider');
+    const valueEl = get('extract-audio-bitrate-value');
+    if (!select || !slider) return;
+
+    const index = Math.max(0, BITRATE_STEPS.indexOf(select.value));
+    slider.value = String(index);
+    if (valueEl) valueEl.textContent = BITRATE_LABELS[index] || select.options[select.selectedIndex]?.textContent || select.value;
+}
+
+function syncBitrateSelectFromSlider() {
+    const select = get('extract-audio-bitrate');
+    const slider = get('extract-audio-bitrate-slider');
+    if (!select || !slider) return;
+
+    const index = Math.max(0, Math.min(BITRATE_STEPS.length - 1, parseInt(slider.value, 10) || 0));
+    const nextValue = BITRATE_STEPS[index];
+    if (select.value !== nextValue) {
+        select.value = nextValue;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+        syncBitrateSliderFromSelect();
+    }
+}
 
 export function updateExtractBitrateVisibility() {
     const extractAudioFormatSelect = get('extract-audio-format');
@@ -27,6 +90,7 @@ export function updateExtractBitrateVisibility() {
 }
 
 export async function handleExtractFileSelection(filePath, options = {}) {
+    if (options.toolMode) setAudioToolMode(options.toolMode);
     const extractFilenameEl = get('extract-filename');
     const extractFileIcon = get('extract-file-icon');
     const extractFileDuration = get('extract-file-duration');
@@ -67,6 +131,7 @@ export async function handleExtractFileSelection(filePath, options = {}) {
     }
     if (extractAudioBitrateSelect && options.bitrate) {
         extractAudioBitrateSelect.value = options.bitrate;
+        syncBitrateSliderFromSelect();
     }
     if (extractSampleRateSelect && (options.sample_rate || options.sampleRate)) {
         extractSampleRateSelect.value = options.sample_rate || options.sampleRate;
@@ -120,7 +185,8 @@ function getExtractOptionsFromUI() {
         mp3_mode: format === 'mp3' ? mp3Mode : null,
         mp3_quality: format === 'mp3' && mp3Mode === 'vbr' ? mp3Quality : null,
         flac_level: format === 'flac' ? flacLevel : null,
-        output_folder: get('output-folder')?.value || ''
+        output_folder: get('output-folder')?.value || '',
+        overwrite_files: !!state.appSettings.overwriteFiles
     };
 }
 
@@ -129,21 +195,32 @@ export function setupExtractAudioHandlers() {
     const extractAudioFormatSelect = get('extract-audio-format');
 
     const extractMp3ModeSelect = get('extract-mp3-mode');
+    const extractAudioBitrateSelect = get('extract-audio-bitrate');
+    const extractAudioBitrateSlider = get('extract-audio-bitrate-slider');
     const extractAddQueueBtn = get('extract-add-queue-btn');
 
     const extractAudioBtn = get('extract-audio-btn');
     const extractBackBtn = get('extract-back-btn');
     const extractAudioDropZone = get('extract-audio-drop-zone');
+    const convertAudioDropZone = get('convert-audio-drop-zone');
 
     const progressTitle = get('progress-title');
     const progressFilename = get('progress-filename');
     const progressView = get('progress-view');
     const queueView = get('queue-view');
     const navExtractAudio = get('nav-extract-audio');
+    const navConvertAudio = get('nav-convert-audio');
     const navQueue = get('nav-queue');
 
     if (extractAudioFormatSelect) {
         extractAudioFormatSelect.addEventListener('change', updateExtractBitrateVisibility);
+    }
+    if (extractAudioBitrateSelect) {
+        extractAudioBitrateSelect.addEventListener('change', syncBitrateSliderFromSelect);
+        syncBitrateSliderFromSelect();
+    }
+    if (extractAudioBitrateSlider) {
+        extractAudioBitrateSlider.addEventListener('input', syncBitrateSelectFromSlider);
     }
     if (extractMp3ModeSelect) {
         extractMp3ModeSelect.addEventListener('change', updateExtractBitrateVisibility);
@@ -153,6 +230,7 @@ export function setupExtractAudioHandlers() {
         setupFileDropZone(extractAudioDropZone, {
             onDrop: ([filePath]) => {
                 if (!filePath) return;
+                setAudioToolMode('extract');
                 handleExtractFileSelection(filePath).then(() => {
                     showView(get('extract-audio-dashboard'));
                     resetNav();
@@ -162,8 +240,9 @@ export function setupExtractAudioHandlers() {
             onEmptyDrop: () => showPopup('Could not read the dropped file path.')
         });
         extractAudioDropZone.addEventListener('click', async () => {
-            const path = await window.api.selectFile();
+            const path = await window.api.selectFile({ filters: VIDEO_FILE_FILTERS, allowAll: true });
             if (path) {
+                setAudioToolMode('extract');
                 handleExtractFileSelection(path).then(() => {
                     showView(get('extract-audio-dashboard'));
                     resetNav();
@@ -173,14 +252,42 @@ export function setupExtractAudioHandlers() {
         });
     }
 
+    if (convertAudioDropZone) {
+        setupFileDropZone(convertAudioDropZone, {
+            onDrop: ([filePath]) => {
+                if (!filePath) return;
+                setAudioToolMode('convert');
+                handleExtractFileSelection(filePath, { toolMode: 'convert' }).then(() => {
+                    showView(get('extract-audio-dashboard'));
+                    resetNav();
+                    if (navConvertAudio) navConvertAudio.classList.add('active');
+                });
+            },
+            onEmptyDrop: () => showPopup('Could not read the dropped file path.')
+        });
+        convertAudioDropZone.addEventListener('click', async () => {
+            const path = await window.api.selectFile({ filters: AUDIO_FILE_FILTERS, allowAll: true });
+            if (path) {
+                setAudioToolMode('convert');
+                handleExtractFileSelection(path, { toolMode: 'convert' }).then(() => {
+                    showView(get('extract-audio-dashboard'));
+                    resetNav();
+                    if (navConvertAudio) navConvertAudio.classList.add('active');
+                });
+            }
+        });
+    }
+
     if (extractBackBtn) {
         extractBackBtn.addEventListener('click', () => {
-            showView(extractAudioDropZone);
+            showView(audioToolMode === 'convert' ? convertAudioDropZone : extractAudioDropZone);
             const resetNav = () => {
                 document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             };
             resetNav();
-            if (navExtractAudio) navExtractAudio.classList.add('active');
+            if (audioToolMode === 'convert') {
+                if (navConvertAudio) navConvertAudio.classList.add('active');
+            } else if (navExtractAudio) navExtractAudio.classList.add('active');
         });
     }
 
@@ -191,7 +298,7 @@ export function setupExtractAudioHandlers() {
 
             if (state.currentEditingQueueId !== null) {
                 const item = state.encodingQueue.find(i => i.id === state.currentEditingQueueId);
-                if (item && item.taskType === 'extract') {
+                if (item && (item.taskType === 'extract' || item.taskType === 'convert-audio')) {
                     item.options = options;
                     if (item.status === 'failed' || item.status === 'pending') {
                         item.status = 'pending';
@@ -201,7 +308,7 @@ export function setupExtractAudioHandlers() {
                     state.setCurrentEditingQueueId(null);
                 }
             } else {
-                addToQueue(options, 'extract');
+                addToQueue(options, audioToolMode === 'convert' ? 'convert-audio' : 'extract');
             }
             showView(queueView);
             const resetNav = () => {
@@ -216,26 +323,36 @@ export function setupExtractAudioHandlers() {
         extractAudioBtn.addEventListener('click', () => {
             if (!extractFilePath) return;
             state.setExtracting(true);
-            if (progressTitle) progressTitle.textContent = 'Extracting audio...';
+            state.setConvertingAudio(audioToolMode === 'convert');
+            state.setEncodingState(true);
+            state.setCancelled(false);
+            state.setLastActiveViewId(audioToolMode === 'convert' ? 'convertAudioDropZone' : 'extractAudioDropZone');
+            if (progressTitle) progressTitle.textContent = audioToolMode === 'convert' ? 'Converting audio...' : 'Extracting audio...';
             if (progressFilename) progressFilename.textContent = extractFilePath.split(/[\\/]/).pop();
             resetProgress();
             showView(progressView);
             toggleSidebar(true);
 
             const options = getExtractOptionsFromUI();
-            window.api.extractAudio({
+            const startAudioTask = audioToolMode === 'convert' ? window.api.convertAudio : window.api.extractAudio;
+            startAudioTask({
                 ...options,
                 work_priority: state.appSettings.workPriority || 'normal'
             }).catch(e => {
-                if (window.api?.logError) window.api.logError('Extract audio error:', e); else console.error('Extract audio error:', e);
+                if (window.api?.logError) window.api.logError('Audio task error:', e); else console.error('Audio task error:', e);
                 state.setEncodingState(false);
                 state.setExtracting(false);
+                state.setConvertingAudio(false);
                 const progressView = get('progress-view');
                 if (progressView) progressView.classList.add('hidden');
-                showPopup(`Error starting audio extraction: ${e}`);
+                showPopup(`Error starting audio task: ${e}`);
             });
         });
     }
+}
+
+export function setExtractToolMode(mode) {
+    setAudioToolMode(mode);
 }
 
 export function getExtractFilePath() {

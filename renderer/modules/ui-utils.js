@@ -553,7 +553,7 @@ export function showView(view) {
     }
 
     const allViews = [
-        'drop-zone', 'folder-drop-zone', 'extract-audio-drop-zone', 'extract-audio-dashboard',
+        'drop-zone', 'folder-drop-zone', 'extract-audio-drop-zone', 'convert-audio-drop-zone', 'extract-audio-dashboard',
         'pdf-tools-drop-zone', 'pdf-tools-dashboard', 'trim-drop-zone', 'trim-dashboard',
         'file-dashboard', 'progress-view', 'complete-view', 'settings-view', 'queue-view',
         'apps-dashboard', 'inspector-view', 'inspector-drop-zone', 'downloader-dashboard',

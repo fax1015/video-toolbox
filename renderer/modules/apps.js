@@ -245,7 +245,7 @@ async function launchTool(toolId) {
 }
 
 function renderSidebarApps() {
-    const staticNavs = ['converter', 'folder', 'trim', 'extract-audio', 'downloader', 'inspector'];
+    const staticNavs = ['converter', 'folder', 'trim', 'extract-audio', 'convert-audio', 'downloader', 'inspector'];
     const pinnedSet = new Set(state.appSettings.pinnedApps || []);
 
     document.querySelectorAll('.nav-item.dynamic-tool').forEach(el => el.remove());

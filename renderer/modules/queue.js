@@ -38,6 +38,29 @@ export function addToQueue(options, taskType = 'encode') {
     updateQueueUI();
 }
 
+export function updateQueueItem(id, options) {
+    const item = state.encodingQueue.find(entry => entry.id === id);
+    if (!item) return false;
+
+    item.options = options;
+    if (options.input) {
+        item.name = item.taskType === 'download' ? options.input : options.input.split(/[\\/]/).pop();
+    }
+    item.status = 'pending';
+    item.state = 'pending';
+    item.progress = 0;
+    item.error = null;
+
+    if (item.taskType === 'encode') {
+        item.preset = state.currentPresetUsed || null;
+        item.presetUsed = item.preset;
+        item.isModified = state.isCurrentSettingsModified;
+    }
+
+    updateQueueUI();
+    return true;
+}
+
 export function updateQueueUI() {
     const queueBadge = get('queue-badge');
     if (queueBadge) {
@@ -67,6 +90,7 @@ export function updateQueueProgress() {
     if (statusEl) {
         const action = item.taskType === 'trim' ? 'Trimming' :
             item.taskType === 'extract' ? 'Extracting' :
+                item.taskType === 'convert-audio' ? 'Converting' :
                 item.taskType === 'download' ? 'Downloading' : 'Encoding';
         statusEl.textContent = `${action}... ${progress}%`;
     }
@@ -108,6 +132,7 @@ export { formatPresetName };
 function getTaskLabel(item) {
     if (item.taskType === 'trim') return 'Trim';
     if (item.taskType === 'extract') return 'Extract audio';
+    if (item.taskType === 'convert-audio') return 'Convert audio';
     if (item.taskType === 'download') return 'Download';
     return 'Encode';
 }
@@ -147,6 +172,7 @@ export function renderQueue() {
             const encodingStatus = item.status === 'encoding'
                 ? (item.taskType === 'trim' ? `Trimming... ${item.progress}%` :
                     item.taskType === 'extract' ? `Extracting... ${item.progress}%` :
+                        item.taskType === 'convert-audio' ? `Converting... ${item.progress}%` :
                         item.taskType === 'download' ? `Downloading... ${item.progress}%` :
                             `Encoding... ${item.progress}%`)
                 : null;
@@ -202,6 +228,7 @@ export function processQueue() {
 
     nextItem.status = 'encoding';
     nextItem.state = 'encoding';
+    nextItem.options.task_id = nextItem.id;
     state.setCurrentlyEncodingItemId(nextItem.id);
     state.setEncodingState(true);
     state.setCancelled(false);
@@ -237,6 +264,10 @@ export function processQueue() {
         if (progressTitle) progressTitle.textContent = 'Extracting audio...';
         if (progressFilename) progressFilename.textContent = nextItem.name;
         window.api.extractAudio(nextItem.options).catch(handleTaskError);
+    } else if (nextItem.taskType === 'convert-audio') {
+        if (progressTitle) progressTitle.textContent = 'Converting audio...';
+        if (progressFilename) progressFilename.textContent = nextItem.name;
+        window.api.convertAudio(nextItem.options).catch(handleTaskError);
     } else if (nextItem.taskType === 'download') {
         if (progressTitle) progressTitle.textContent = 'Downloading video...';
         if (progressFilename) progressFilename.textContent = nextItem.name;

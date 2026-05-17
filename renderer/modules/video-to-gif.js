@@ -422,6 +422,7 @@ function buildVideoToGifOptions() {
         end_seconds: endSeconds,
         crop: currentCrop ? { ...currentCrop } : null,
         output_folder: get('output-folder')?.value || '',
+        overwrite_files: !!state.appSettings.overwriteFiles,
         work_priority: state.appSettings.workPriority || 'normal'
     };
 
@@ -1621,6 +1622,7 @@ async function gftFireImageConversion() {
             frame_durations_ms: gftFrames.map(f => f.durationMs),
             output_path: outputPath,
             width: parseInt(get('vtg-width')?.value || '480'),
+            overwrite_files: !!state.appSettings.overwriteFiles,
         });
 
         if (!result) {

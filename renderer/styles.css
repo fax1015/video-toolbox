@@ -1514,7 +1514,8 @@ select:disabled {
 }
 
 .crf-group #crf-value,
-.crf-group #image-to-pdf-quality-value {
+.crf-group #image-to-pdf-quality-value,
+#extract-audio-bitrate-value {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1772,6 +1773,24 @@ input[type="range"]:disabled::-webkit-slider-thumb {
 .crf-labels span {
     font-size: 11px;
     color: var(--text-muted);
+}
+
+.stepped-slider {
+    margin-bottom: 6px;
+}
+
+.stepped-slider-labels {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1;
+    padding: 0 2px;
+}
+
+.stepped-slider-labels span {
+    min-width: 0;
+    text-align: center;
 }
 
 .advanced-section-toggle {

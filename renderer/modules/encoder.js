@@ -2,7 +2,7 @@
 
 import { get, showPopup, showConfirm, showView, renderAudioTracks, renderSubtitleTracks, resetNav, toggleSidebar, animateAutoHeight, setupFileDropZone, getPathBasename } from './ui-utils.js';
 import * as state from './state.js';
-import { addToQueue, updateQueueUI, formatPresetName } from './queue.js';
+import { addToQueue, updateQueueUI, updateQueueItem, formatPresetName } from './queue.js';
 import { BUILT_IN_PRESETS } from '../constants.js';
 
 let isApplyingPreset = false;
@@ -48,18 +48,28 @@ function renderCustomPresetList(customPresets) {
 
     const names = Object.keys(customPresets);
     if (names.length === 0) {
-        list.innerHTML = '<div class="preset-empty">No custom presets</div>';
+        const empty = document.createElement('div');
+        empty.className = 'preset-empty';
+        empty.textContent = 'No custom presets';
+        list.replaceChildren(empty);
         return;
     }
 
-    list.innerHTML = names.map(name => `
-        <div class="preset-item dropdown-item" data-custom-preset="${name}">
-            ${name}
-            <button class="preset-remove" type="button" data-delete-preset="${name}">×</button>
-        </div>
-    `).join('');
+    const fragment = document.createDocumentFragment();
+    names.forEach(name => {
+        const item = document.createElement('div');
+        item.className = 'preset-item dropdown-item';
+        item.dataset.customPreset = name;
 
-    list.querySelectorAll('[data-delete-preset]').forEach(btn => {
+        const label = document.createElement('span');
+        label.textContent = name;
+        item.append(label);
+
+        const btn = document.createElement('button');
+        btn.className = 'preset-remove';
+        btn.type = 'button';
+        btn.dataset.deletePreset = name;
+        btn.textContent = '×';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const key = btn.dataset.deletePreset;
@@ -68,7 +78,10 @@ function renderCustomPresetList(customPresets) {
             saveCustomPresets(customPresets);
             renderCustomPresetList(customPresets);
         });
+        item.append(btn);
+        fragment.append(item);
     });
+    list.replaceChildren(fragment);
 }
 
 export function getEffectiveCodec() {
@@ -110,6 +123,11 @@ export function getOptionsFromUI() {
     const outputFolderInput = get('output-folder');
 
     const rateMode = document.querySelector('input[name="rate-mode"]:checked')?.value || 'crf';
+    if (twoPassCheckbox) {
+        twoPassCheckbox.checked = false;
+        twoPassCheckbox.disabled = true;
+        twoPassCheckbox.title = 'Two-pass encoding is disabled until backend support is implemented.';
+    }
 
     return {
         input: state.currentFilePath,
@@ -129,6 +147,7 @@ export function getOptionsFromUI() {
         chapters_file: state.chaptersFile,
         output_suffix: state.appSettings.outputSuffix,
         output_folder: outputFolderInput ? outputFolderInput.value : '',
+        overwrite_files: !!state.appSettings.overwriteFiles,
         custom_args: customFfmpegArgs ? customFfmpegArgs.value : '',
         work_priority: state.appSettings.workPriority || 'normal',
         threads: state.appSettings.cpuThreads || 0
@@ -560,7 +579,10 @@ export async function handleFolderSelection(folderPath) {
                 chapters_file: null,
                 output_suffix: state.appSettings.outputSuffix,
                 output_folder: outputFolderInput ? outputFolderInput.value : '',
-                custom_args: customFfmpegArgs ? customFfmpegArgs.value : ''
+                overwrite_files: !!state.appSettings.overwriteFiles,
+                custom_args: customFfmpegArgs ? customFfmpegArgs.value : '',
+                work_priority: state.appSettings.workPriority || 'normal',
+                threads: state.appSettings.cpuThreads || 0
             };
             addToQueue(options);
         });
@@ -682,6 +704,7 @@ export function setupEncoderHandlers() {
 
             if (state.currentEditingQueueId) {
                 updateQueueItem(state.currentEditingQueueId, options);
+                state.setCurrentEditingQueueId(null);
                 const queueView = get('queue-view');
                 const navQueue = get('nav-queue');
                 showView(queueView);
@@ -1044,22 +1067,3 @@ function handleChapterFile(path) {
     if (chapterImportZone) chapterImportZone.classList.add('hidden');
 }
 
-function updateQueueItem(id, options) {
-    const index = state.encodingQueue.findIndex(item => item.id === id);
-    if (index !== -1) {
-        state.encodingQueue[index].options = options;
-        state.encodingQueue[index].name = options.input.split(/[\\/]/).pop();
-        state.encodingQueue[index].preset = state.currentPresetUsed || null;
-        state.encodingQueue[index].presetUsed = state.encodingQueue[index].preset;
-        state.encodingQueue[index].isModified = state.isCurrentSettingsModified;
-
-        if (state.encodingQueue[index].status === 'completed' || state.encodingQueue[index].status === 'error') {
-            state.encodingQueue[index].status = 'pending';
-            state.encodingQueue[index].state = 'pending';
-            state.encodingQueue[index].progress = 0;
-        }
-
-        updateQueueUI();
-    }
-    state.setCurrentEditingQueueId(null);
-}
