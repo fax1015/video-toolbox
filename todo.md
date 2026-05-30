@@ -1,0 +1,1 @@
+make drop zone content slide in/out from right to left

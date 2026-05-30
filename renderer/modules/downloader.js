@@ -13,6 +13,13 @@ let isSyncingUI = false;
 let currentInfoRequestId = 0;
 let currentDlOutputPath = '';
 
+function getCookieOptions() {
+    return {
+        cookiesBrowser: state.appSettings.youtubeCookiesBrowser || 'auto',
+        cookiesPath: state.appSettings.youtubeCookiesPath || ''
+    };
+}
+
 function formatAudioLabel(codec) {
     if (!codec) return 'Audio';
     const normalized = codec.toLowerCase();
@@ -44,6 +51,52 @@ function getAudioFormatKey(format) {
     if (ext === 'ogg') return 'vorbis';
 
     return ext || null;
+}
+
+function isAbsoluteHttpUrl(value) {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+}
+
+function isYoutubeUrl(value) {
+    try {
+        const host = new URL(value).hostname.toLowerCase();
+        return host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com');
+    } catch (_) {
+        return false;
+    }
+}
+
+function buildPlaylistEntryUrl(entry, sourceUrl, extractor) {
+    const extractorKey = (extractor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const isYoutube = extractorKey.includes('youtube') || isYoutubeUrl(sourceUrl);
+    const candidate = entry.url || entry.webpage_url || entry.original_url;
+
+    if (isYoutube && entry.id) {
+        return `https://www.youtube.com/watch?v=${entry.id}`;
+    }
+
+    if (candidate && isAbsoluteHttpUrl(candidate)) {
+        return candidate;
+    }
+
+    if (candidate) {
+        try {
+            return new URL(candidate, sourceUrl).href;
+        } catch (e) {
+            if (window.api?.logWarn) window.api.logWarn('Ignored error: ' + e);
+        }
+    }
+
+    if (entry.url_direct && isAbsoluteHttpUrl(entry.url_direct)) {
+        return entry.url_direct;
+    }
+
+    return null;
 }
 
 export function setCurrentDownloadUrl(url) {
@@ -457,7 +510,7 @@ export async function processVideoUrl(url) {
 
     try {
         const isSoundCloud = url.includes('soundcloud.com');
-        let info = await window.api.getVideoInfo(url, { disableFlatPlaylist: isSoundCloud });
+        let info = await window.api.getVideoInfo(url, { disableFlatPlaylist: isSoundCloud, ...getCookieOptions() });
 
         if (requestId !== currentInfoRequestId) return;
 
@@ -528,22 +581,7 @@ export async function processVideoUrl(url) {
 
                     if (choice) {
                         info.entries.forEach((entry, index) => {
-                            // Try to get the URL from various possible fields
-                            let entryUrl = entry.url || entry.webpage_url || entry.original_url;
-                            
-                            if (!entryUrl && entry.id) {
-                                // Try to construct URL based on extractor type
-                                const extractor = entry.extractor || info.extractor || '';
-                                const extractorKey = extractor.toLowerCase().replace(/[^a-z0-9]/g, '');
-                                
-                                if (extractorKey.includes('youtube') || url.includes('youtube.com') || url.includes('youtu.be')) {
-                                    entryUrl = `https://www.youtube.com/watch?v=${entry.id}`;
-                                } else if (entry.url_direct) {
-                                    entryUrl = entry.url_direct;
-                                }
-                                // For SoundCloud and other platforms, the entry should have a URL field
-                                // if disableFlatPlaylist was used when fetching
-                            }
+                            const entryUrl = buildPlaylistEntryUrl(entry, url, entry.extractor || info.extractor);
 
                             if (entryUrl) {
                                 let name = entry.fulltitle || entry.original_title || entry.title || entry.track;
@@ -572,7 +610,9 @@ export async function processVideoUrl(url) {
                                     quality: 'best',
                                     format: 'mp4',
                                     audioFormat: 'mp3',
-                                    audioBitrate: '192k'
+                                    audioBitrate: '192k',
+                                    cookies_browser: state.appSettings.youtubeCookiesBrowser || 'auto',
+                                    cookies_path: state.appSettings.youtubeCookiesPath || ''
                                 };
 
                                 if (choice === 'audio') {
@@ -1008,7 +1048,9 @@ export function setupDownloaderHandlers() {
                 audio_format: dlAudioFormatSelect ? dlAudioFormatSelect.value : 'mp3',
                 audio_bitrate: dlAudioBitrateSelect ? dlAudioBitrateSelect.value : '192k',
                 output_path: get('output-folder')?.value || '',
-                overwrite_files: !!state.appSettings.overwriteFiles
+                overwrite_files: !!state.appSettings.overwriteFiles,
+                cookies_browser: state.appSettings.youtubeCookiesBrowser || 'auto',
+                cookies_path: state.appSettings.youtubeCookiesPath || ''
             };
 
             if (state.currentEditingQueueId !== null) {

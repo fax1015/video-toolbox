@@ -1198,6 +1198,7 @@
                                         <option value="h264">H.264 (AVC)</option>
                                         <option value="h265">H.265 (HEVC)</option>
                                         <option value="vp9">VP9</option>
+                                        <option value="av1">AV1</option>
                                         <option value="copy">Copy (No Re-encode)</option>
                                     </select>
                                 </div>
@@ -1686,6 +1687,30 @@
                                     <option value="low">Low</option>
                                     <option value="idle">Idle</option>
                                 </select>
+                            </div>
+                        </section>
+
+                        <section class="settings-section">
+                            <h4 class="panel-title">Downloader</h4>
+                            <div class="control-group">
+                                <label>YouTube Cookies</label>
+                                <p class="help-text">Used only when YouTube requires sign-in or bot verification. On Windows, Auto Detect uses Firefox only; use a cookies.txt file for Chrome, Edge, or Brave.</p>
+                                <select id="youtube-cookies-browser">
+                                    <option value="auto">Auto Detect Browser</option>
+                                    <option value="chrome">Chrome</option>
+                                    <option value="edge">Microsoft Edge</option>
+                                    <option value="brave">Brave</option>
+                                    <option value="firefox">Firefox</option>
+                                    <option value="none">Disabled</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <label>Cookies File</label>
+                                <p class="help-text">Optional cookies.txt file. When set, this is used instead of browser cookies.</p>
+                                <div class="folder-input-group">
+                                    <input type="text" id="youtube-cookies-path" placeholder="Optional cookies.txt path">
+                                    <button id="select-youtube-cookies-btn" class="secondary-btn">Browse</button>
+                                </div>
                             </div>
                         </section>
 

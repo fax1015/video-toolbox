@@ -7,6 +7,39 @@ import { BUILT_IN_PRESETS } from '../constants.js';
 
 let isApplyingPreset = false;
 const CUSTOM_PRESETS_KEY = 'custom_presets';
+const COMPATIBLE_VIDEO_CODECS = {
+    mp4: ['h264', 'h265', 'av1', 'copy'],
+    mov: ['h264', 'h265', 'av1', 'copy'],
+    webm: ['vp9', 'av1', 'copy'],
+    mkv: ['h264', 'h265', 'vp9', 'av1', 'copy'],
+    avi: ['h264', 'copy']
+};
+const COMPATIBLE_AUDIO_CODECS = {
+    mp4: ['aac', 'mp3', 'ac3', 'pcm_s16le', 'copy'],
+    mov: ['aac', 'mp3', 'ac3', 'pcm_s16le', 'copy'],
+    webm: ['opus', 'vorbis', 'copy'],
+    mkv: ['aac', 'mp3', 'opus', 'flac', 'ac3', 'pcm_s16le', 'copy'],
+    avi: ['mp3', 'ac3', 'pcm_s16le', 'copy']
+};
+const DEFAULT_VIDEO_CODEC_BY_FORMAT = { mp4: 'h264', mov: 'h264', webm: 'vp9', mkv: 'h264', avi: 'h264' };
+const DEFAULT_AUDIO_CODEC_BY_FORMAT = { mp4: 'aac', mov: 'aac', webm: 'opus', mkv: 'aac', avi: 'mp3' };
+
+function enforceCompatibleEncodingSettings() {
+    const formatSelect = get('format-select');
+    const codecSelect = get('codec-select');
+    const audioSelect = get('audio-select');
+    const format = formatSelect?.value || state.appSettings.defaultFormat || 'mp4';
+
+    const videoAllowed = COMPATIBLE_VIDEO_CODECS[format] || COMPATIBLE_VIDEO_CODECS.mp4;
+    if (codecSelect && !videoAllowed.includes(codecSelect.value)) {
+        codecSelect.value = DEFAULT_VIDEO_CODEC_BY_FORMAT[format] || videoAllowed[0];
+    }
+
+    const audioAllowed = COMPATIBLE_AUDIO_CODECS[format] || COMPATIBLE_AUDIO_CODECS.mp4;
+    if (audioSelect && !audioAllowed.includes(audioSelect.value)) {
+        audioSelect.value = DEFAULT_AUDIO_CODEC_BY_FORMAT[format] || audioAllowed[0];
+    }
+}
 
 function loadCustomPresets() {
     try {
@@ -89,6 +122,11 @@ export function getEffectiveCodec() {
     const baseCodec = codecSelect ? codecSelect.value : 'h264';
     if (baseCodec === 'copy') return 'copy';
 
+    const rateMode = document.querySelector('input[name="rate-mode"]:checked')?.value || 'crf';
+    if (rateMode !== 'bitrate') {
+        return baseCodec || 'h264';
+    }
+
     let accel = state.appSettings.hwAccel;
     if (accel === 'auto') {
         accel = getAutoEncoder();
@@ -109,6 +147,8 @@ function getAutoEncoder() {
 }
 
 export function getOptionsFromUI() {
+    enforceCompatibleEncodingSettings();
+
     const formatSelect = get('format-select');
 
     const presetSelect = get('preset-select');
@@ -204,6 +244,8 @@ export function applyOptionsToUI(options) {
 
     if (customFfmpegArgs) customFfmpegArgs.value = options.custom_args || '';
     if (outputFolderInput) outputFolderInput.value = options.output_folder || '';
+
+    enforceCompatibleEncodingSettings();
 
     state.setAudioTracks(options.audio_tracks ? [...options.audio_tracks] : []);
     state.setSubtitleTracks(options.subtitle_tracks ? [...options.subtitle_tracks] : []);
@@ -521,6 +563,8 @@ export function applyPreset(settings, name) {
         setVal(audioBitrateSelect, settings.audioBitrate === 'auto' ? '192k' : settings.audioBitrate);
     }
 
+    enforceCompatibleEncodingSettings();
+
     state.setCurrentPreset(name, { ...settings }, false);
 
     isApplyingPreset = false;
@@ -692,7 +736,13 @@ export function setupEncoderHandlers() {
             state.setEncodingState(true);
             state.setCancelled(false);
 
-            window.api.startEncode(options);
+            window.api.startEncode(options).catch((err) => {
+                if (window.api?.logError) window.api.logError('Encode start failed:', err); else console.error('Encode start failed:', err);
+                state.setEncodingState(false);
+                toggleSidebar(false);
+                showView(get('file-dashboard'));
+                showPopup(`Could not start the encode: ${err?.message || err}`);
+            });
         });
     }
 
@@ -876,6 +926,7 @@ export function setupEncoderHandlers() {
                 'preset-select', 'audio-select', 'audio-bitrate', 'two-pass'
             ];
             if (watchIds.includes(id)) {
+                enforceCompatibleEncodingSettings();
                 updatePresetStatus();
             }
         });

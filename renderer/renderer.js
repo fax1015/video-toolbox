@@ -361,6 +361,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const outputFolderInput = get('output-folder');
     const selectOutputFolderBtn = get('select-output-folder-btn');
     const overwriteFilesCheckbox = get('overwrite-files');
+    const youtubeCookiesBrowserSelect = get('youtube-cookies-browser');
+    const youtubeCookiesPathInput = get('youtube-cookies-path');
+    const selectYoutubeCookiesBtn = get('select-youtube-cookies-btn');
     const notifyOnCompleteCheckbox = get('notify-on-complete');
     const waitForIndexingCheckbox = get('wait-for-indexing');
     const hwAutoTag = get('hw-auto-tag');
@@ -475,6 +478,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (workPrioritySelect) state.appSettings.workPriority = workPrioritySelect.value;
         if (outputFolderInput) state.appSettings.outputFolder = outputFolderInput.value;
         if (overwriteFilesCheckbox) state.appSettings.overwriteFiles = overwriteFilesCheckbox.checked;
+        if (youtubeCookiesBrowserSelect) state.appSettings.youtubeCookiesBrowser = youtubeCookiesBrowserSelect.value;
+        if (youtubeCookiesPathInput) state.appSettings.youtubeCookiesPath = youtubeCookiesPathInput.value;
         if (notifyOnCompleteCheckbox) state.appSettings.notifyOnComplete = notifyOnCompleteCheckbox.checked;
         if (waitForIndexingCheckbox) state.appSettings.waitForIndexing = waitForIndexingCheckbox.checked;
         if (showBlobsCheckbox) state.appSettings.showBlobs = showBlobsCheckbox.checked;
@@ -505,6 +510,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (workPrioritySelect) workPrioritySelect.value = state.appSettings.workPriority;
             if (outputFolderInput) outputFolderInput.value = state.appSettings.outputFolder;
             if (overwriteFilesCheckbox) overwriteFilesCheckbox.checked = state.appSettings.overwriteFiles;
+            if (youtubeCookiesBrowserSelect) youtubeCookiesBrowserSelect.value = state.appSettings.youtubeCookiesBrowser || 'auto';
+            if (youtubeCookiesPathInput) youtubeCookiesPathInput.value = state.appSettings.youtubeCookiesPath || '';
             if (notifyOnCompleteCheckbox) notifyOnCompleteCheckbox.checked = state.appSettings.notifyOnComplete;
             if (waitForIndexingCheckbox) waitForIndexingCheckbox.checked = (state.appSettings.waitForIndexing !== false);
             if (showBlobsCheckbox) showBlobsCheckbox.checked = (state.appSettings.showBlobs !== false);
@@ -771,7 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Setup settings change handlers
-    const changeElements = [outputSuffixInput, defaultFormatSelect, themeSelectAttr, accentColorSelect, workPrioritySelect, overwriteFilesCheckbox, notifyOnCompleteCheckbox, waitForIndexingCheckbox, outputFolderInput, showBlobsCheckbox, cpuThreadsInput];
+    const changeElements = [outputSuffixInput, defaultFormatSelect, themeSelectAttr, accentColorSelect, workPrioritySelect, overwriteFilesCheckbox, youtubeCookiesBrowserSelect, youtubeCookiesPathInput, notifyOnCompleteCheckbox, waitForIndexingCheckbox, outputFolderInput, showBlobsCheckbox, cpuThreadsInput];
     if (hwAccelSelect) {
         hwAccelSelect.addEventListener('change', () => {
             delete hwAccelSelect.dataset.auto;
@@ -791,6 +798,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const path = await electron.selectFolder();
             if (path) {
                 outputFolderInput.value = path;
+                saveSettings();
+            }
+        });
+    }
+
+    if (selectYoutubeCookiesBtn) {
+        selectYoutubeCookiesBtn.addEventListener('click', async () => {
+            const path = await electron.selectFile({
+                filters: [{ name: 'Cookies', extensions: ['txt'] }],
+                allowAll: true
+            });
+            if (path) {
+                youtubeCookiesPathInput.value = path;
                 saveSettings();
             }
         });

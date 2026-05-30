@@ -163,7 +163,12 @@ window.api = {
     }),
 
     // ==================== Download APIs ====================
-    getVideoInfo: (url, options) => invoke('get_video_info', { url, disableFlatPlaylist: options?.disableFlatPlaylist }),
+    getVideoInfo: (url, options) => invoke('get_video_info', {
+        url,
+        disableFlatPlaylist: options?.disableFlatPlaylist,
+        cookiesBrowser: options?.cookiesBrowser,
+        cookiesPath: options?.cookiesPath
+    }),
     downloadVideo: async (options) => {
         await initPromise;
         return invoke('download_video', { url: options.url, options });

@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS = {
     skeuoMode: false,
     cpuThreads: 0,
     waitForIndexing: true,
+    youtubeCookiesBrowser: 'auto',
+    youtubeCookiesPath: '',
     pinnedApps: ['converter', 'folder', 'trim', 'extract-audio', 'convert-audio']
 };
 
